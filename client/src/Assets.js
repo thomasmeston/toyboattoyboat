@@ -1,7 +1,44 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createPaperMaterial, PALETTE } from './StyleSystem.js';
 
 // Procedural geometry creators for papercraft assets
+
+/** "Lighthouse" — Poly by Google (CC-BY) https://poly.pizza/m/7H8is9jrGeB */
+const LIGHTHOUSE_URL = '/models/lighthouse.glb';
+let lighthouseTemplatePromise = null;
+
+function loadLighthouseTemplate() {
+  if (!lighthouseTemplatePromise) {
+    lighthouseTemplatePromise = new Promise((resolve) => {
+      new GLTFLoader().load(
+        LIGHTHOUSE_URL,
+        (gltf) => resolve(gltf.scene),
+        undefined,
+        (err) => {
+          console.warn('Lighthouse model failed to load:', err);
+          resolve(null);
+        },
+      );
+    });
+  }
+  return lighthouseTemplatePromise;
+}
+
+loadLighthouseTemplate();
+
+function meshBounds(root) {
+  const box = new THREE.Box3();
+  let found = false;
+  root.traverse((child) => {
+    if (child.isMesh) {
+      box.expandByObject(child);
+      found = true;
+    }
+  });
+  if (!found) box.setFromObject(root);
+  return box;
+}
 
 // 1. Origami Paper Sailboat
 export function createClassicFoldBoat(hullColor, flagColor, flagSymbol = 'star') {
@@ -325,26 +362,23 @@ export function createPushstick(stickType, color) {
   if (stickType === 'brass') stickColorCode = PALETTE.brassStick;
   else if (stickType === 'ribbon') stickColorCode = PALETTE.ribbonStick;
 
-  // The long handle
+  // Handle along Z; tip on -Z so Object3D.lookAt aims the tip at the target
   const handleGeo = new THREE.CylinderGeometry(0.08, 0.08, 12, 6);
-  handleGeo.rotateX(Math.PI / 2); // align along Z-axis
+  handleGeo.rotateX(Math.PI / 2);
   const handleMat = createPaperMaterial(stickColorCode);
   const handle = new THREE.Mesh(handleGeo, handleMat);
   handle.castShadow = true;
   group.add(handle);
 
-  // Head piece (e.g. Y-shaped fork or padded brass tip)
   let headGeo;
   if (stickType === 'wooden') {
-    // Y-shaped fork made of cardboard boxy parts
     headGeo = new THREE.TorusGeometry(0.4, 0.08, 4, 8, Math.PI);
     headGeo.rotateX(Math.PI / 2);
   } else {
-    // Elegant knob/brass end
     headGeo = new THREE.SphereGeometry(0.22, 6, 6);
   }
   const head = new THREE.Mesh(headGeo, handleMat);
-  head.position.set(0, 0, 6.0); // At the tip of the 12-unit stick
+  head.position.set(0, 0, -6.0);
   head.castShadow = true;
   group.add(head);
 
@@ -402,6 +436,109 @@ export function createParkScenery(fountainRadius) {
     group.add(tree);
   }
 
+  // Distant city blocks (sit in fog beyond the grass ring)
+  group.add(createDistantBuildings(fountainRadius));
+
+  return group;
+}
+
+/** Ring of soft papercraft Parisian blocks for ambient skyline. */
+function createDistantBuildings(fountainRadius) {
+  const group = new THREE.Group();
+  group.name = 'DistantBuildings';
+
+  const ringCount = 28;
+  for (let i = 0; i < ringCount; i++) {
+    const angle = (i / ringCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.12;
+    const distance = fountainRadius + 95 + Math.random() * 55;
+    const block = createPaperBuildingBlock();
+    block.position.set(
+      Math.cos(angle) * distance,
+      0,
+      Math.sin(angle) * distance,
+    );
+    block.rotation.y = angle + Math.PI; // face toward park
+    block.rotation.y += (Math.random() - 0.5) * 0.25;
+    group.add(block);
+  }
+
+  // A few taller landmarks for silhouette variety
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2 + 0.4;
+    const distance = fountainRadius + 140 + Math.random() * 40;
+    const tower = createPaperBuildingBlock({ tall: true });
+    tower.position.set(
+      Math.cos(angle) * distance,
+      0,
+      Math.sin(angle) * distance,
+    );
+    tower.rotation.y = angle + Math.PI;
+    group.add(tower);
+  }
+
+  return group;
+}
+
+function createPaperBuildingBlock({ tall = false } = {}) {
+  const group = new THREE.Group();
+
+  const width = 10 + Math.random() * 14;
+  const depth = 8 + Math.random() * 10;
+  const floors = tall ? 8 + Math.floor(Math.random() * 5) : 3 + Math.floor(Math.random() * 4);
+  const height = floors * (2.4 + Math.random() * 0.6);
+
+  const bodyColors = [PALETTE.buildingCream, PALETTE.buildingStone, PALETTE.buildingAccent];
+  const bodyColor = bodyColors[Math.floor(Math.random() * bodyColors.length)];
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, depth),
+    createPaperMaterial(bodyColor),
+  );
+  body.position.y = height * 0.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // Mansard / zinc roof slab
+  const roofH = 1.6 + Math.random() * 1.2;
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(width * 1.02, roofH, depth * 1.02),
+    createPaperMaterial(PALETTE.buildingRoof),
+  );
+  roof.position.y = height + roofH * 0.45;
+  roof.castShadow = true;
+  group.add(roof);
+
+  // Simple chimney accent on some blocks
+  if (Math.random() > 0.45) {
+    const chimney = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 2.2, 1.1),
+      createPaperMaterial(PALETTE.buildingStone),
+    );
+    chimney.position.set(
+      (Math.random() - 0.5) * width * 0.35,
+      height + roofH + 0.8,
+      (Math.random() - 0.5) * depth * 0.35,
+    );
+    chimney.castShadow = true;
+    group.add(chimney);
+  }
+
+  // Optional second adjoining wing for denser skyline
+  if (!tall && Math.random() > 0.55) {
+    const wingW = width * (0.45 + Math.random() * 0.3);
+    const wingH = height * (0.7 + Math.random() * 0.25);
+    const wing = new THREE.Mesh(
+      new THREE.BoxGeometry(wingW, wingH, depth * 0.85),
+      createPaperMaterial(bodyColors[Math.floor(Math.random() * bodyColors.length)]),
+    );
+    wing.position.set(width * 0.55, wingH * 0.5, 0);
+    wing.castShadow = true;
+    group.add(wing);
+  }
+
+  const scale = 0.85 + Math.random() * 0.35;
+  group.scale.set(scale, scale * (0.9 + Math.random() * 0.2), scale);
   return group;
 }
 
@@ -436,26 +573,204 @@ function createPaperTree() {
   return group;
 }
 
-// 7. Obstacle Mesh Factory
-export function createObstacleMesh(type, radius) {
-  let mesh;
-  if (type === 'rock') {
-    // Faceted cardboard rock
-    const geo = new THREE.DodecahedronGeometry(radius, 0); // No details = flat panels
-    const mat = createPaperMaterial(PALETTE.obstacleRock);
-    
-    // Perturb vertices slightly for custom handcrafted feel
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i) + (Math.random() - 0.5) * 0.3;
-      const y = pos.getY(i) + (Math.random() - 0.5) * 0.3;
-      const z = pos.getZ(i) + (Math.random() - 0.5) * 0.3;
-      pos.setXYZ(i, x, y, z);
-    }
-    geo.computeVertexNormals();
+/** Papercraft miniature island; optional tiny lighthouse. */
+function createMiniatureIsland(radius, { withLighthouse = false } = {}) {
+  const group = new THREE.Group();
+  group.name = withLighthouse ? 'IslandLighthouse' : 'Island';
 
-    mesh = new THREE.Mesh(geo, mat);
-    mesh.position.y = radius * 0.5; // sit on water surface
+  const sandMat = createPaperMaterial(PALETTE.islandSand);
+  const dirtMat = createPaperMaterial(PALETTE.islandDirt);
+  const grassMat = createPaperMaterial(PALETTE.islandGrass);
+
+  // Low sandy mound
+  const mound = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    sandMat,
+  );
+  mound.scale.set(1.15, 0.45, 1.0);
+  mound.position.y = 0.05;
+  mound.castShadow = true;
+  mound.receiveShadow = true;
+  group.add(mound);
+
+  // Earth ring under the turf
+  const dirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.78, radius * 0.95, radius * 0.35, 10),
+    dirtMat,
+  );
+  dirt.position.y = radius * 0.22;
+  dirt.castShadow = true;
+  group.add(dirt);
+
+  // Grass cap
+  const grass = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.72, radius * 0.8, radius * 0.22, 10),
+    grassMat,
+  );
+  grass.position.y = radius * 0.42;
+  grass.castShadow = true;
+  group.add(grass);
+
+  // A couple of papercraft shrub cones
+  const shrubCount = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < shrubCount; i++) {
+    const a = (i / shrubCount) * Math.PI * 2 + Math.random() * 0.4;
+    const d = radius * (0.25 + Math.random() * 0.35);
+    const s = radius * (0.18 + Math.random() * 0.14);
+    const shrub = new THREE.Mesh(
+      new THREE.ConeGeometry(s, s * 1.6, 5),
+      createPaperMaterial(Math.random() > 0.5 ? PALETTE.foliageDark : PALETTE.foliageLight),
+    );
+    shrub.position.set(Math.cos(a) * d, radius * 0.55 + s * 0.5, Math.sin(a) * d);
+    shrub.castShadow = true;
+    group.add(shrub);
+  }
+
+  if (withLighthouse) {
+    addProceduralLighthouse(group, radius);
+  }
+
+  group.rotation.y = Math.random() * Math.PI * 2;
+  return group;
+}
+
+function addProceduralLighthouse(group, radius) {
+  const towerH = radius * 1.35;
+  const towerR = Math.max(0.35, radius * 0.14);
+  const baseY = radius * 0.52;
+
+  const tower = new THREE.Mesh(
+    new THREE.CylinderGeometry(towerR * 0.85, towerR, towerH, 8),
+    createPaperMaterial(PALETTE.lighthouseWhite),
+  );
+  tower.position.y = baseY + towerH * 0.5;
+  tower.castShadow = true;
+  group.add(tower);
+
+  const band = new THREE.Mesh(
+    new THREE.CylinderGeometry(towerR * 0.9, towerR * 0.95, towerH * 0.22, 8),
+    createPaperMaterial(PALETTE.lighthouseRed),
+  );
+  band.position.y = baseY + towerH * 0.55;
+  band.castShadow = true;
+  group.add(band);
+
+  const lantern = new THREE.Mesh(
+    new THREE.CylinderGeometry(towerR * 1.15, towerR * 1.05, towerH * 0.18, 8),
+    createPaperMaterial(PALETTE.lighthouseWhite),
+  );
+  lantern.position.y = baseY + towerH + towerH * 0.08;
+  lantern.castShadow = true;
+  group.add(lantern);
+
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(towerR * 0.55, 8, 6),
+    new THREE.MeshStandardMaterial({
+      color: PALETTE.lighthouseLight,
+      emissive: PALETTE.lighthouseLight,
+      emissiveIntensity: 0.85,
+      roughness: 0.4,
+    }),
+  );
+  light.position.y = baseY + towerH + towerH * 0.08;
+  group.add(light);
+
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(towerR * 1.35, towerH * 0.35, 8),
+    createPaperMaterial(PALETTE.lighthouseRed),
+  );
+  roof.position.y = baseY + towerH + towerH * 0.28;
+  roof.castShadow = true;
+  group.add(roof);
+}
+
+async function createLighthouseIsland(radius) {
+  const group = createMiniatureIsland(radius, { withLighthouse: false });
+  group.name = 'IslandLighthouse';
+
+  const template = await loadLighthouseTemplate();
+  if (!template) {
+    addProceduralLighthouse(group, radius);
+    return group;
+  }
+
+  const model = template.clone(true);
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  const targetHeight = radius * 0.8; // ~3× smaller than the original island-scale tower
+  const box = meshBounds(model);
+  const size = box.getSize(new THREE.Vector3());
+  const scale = targetHeight / Math.max(size.y, 0.001);
+  model.scale.setScalar(scale);
+  model.updateMatrixWorld(true);
+
+  const grounded = meshBounds(model);
+  const center = grounded.getCenter(new THREE.Vector3());
+  model.position.x -= center.x;
+  model.position.z -= center.z;
+  // Sit on the grass cap of the miniature island
+  model.position.y = radius * 0.52 - grounded.min.y;
+
+  group.add(model);
+  return group;
+}
+
+function createScoringRing(radius, facing = 0) {
+  const group = new THREE.Group();
+  const tube = Math.max(0.22, radius * 0.16);
+  const stripes = 14;
+  const arc = (Math.PI * 2) / stripes;
+  const redMat = createPaperMaterial(0xe85a5a);
+  const whiteMat = createPaperMaterial(0xf7f4ef);
+  const ring = new THREE.Group();
+
+  for (let i = 0; i < stripes; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.TorusGeometry(radius, tube, 6, 7, arc * 0.94),
+      i % 2 === 0 ? redMat : whiteMat,
+    );
+    seg.rotation.z = i * arc;
+    seg.castShadow = true;
+    ring.add(seg);
+  }
+
+  // Default torus is vertical (XY); align hole with sail-through facing
+  ring.rotation.y = Math.PI / 2 - facing;
+  ring.position.y = radius;
+  group.add(ring);
+
+  const pad = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * 0.8, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd0d0,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    }),
+  );
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.04;
+  group.add(pad);
+
+  return group;
+}
+
+// 7. Obstacle Mesh Factory (async — lighthouse loads a GLB)
+export async function createObstacleMesh(type, radius, options = {}) {
+  let mesh;
+  if (type === 'ring') {
+    mesh = createScoringRing(radius, options.facing ?? 0);
+  } else if (type === 'lighthouse') {
+    mesh = await createLighthouseIsland(radius);
+  } else if (type === 'island' || type === 'rock') {
+    mesh = createMiniatureIsland(radius, {
+      withLighthouse: type === 'rock' && Math.random() < 0.35,
+    });
   } else if (type === 'buoy') {
     // Red and white paper striped cone buoy
     mesh = new THREE.Group();

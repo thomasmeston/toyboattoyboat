@@ -62,9 +62,21 @@ export const PALETTE = {
   woodStick: 0xd2b48c,  // natural light wood/branch
   brassStick: 0xe2c670, // soft pastel gold/brass
   ribbonStick: 0xfcb3ba,// pastel pink stick
-  obstacleRock: 0xc4beb3, // soft gray-brown rock
+  obstacleRock: 0xc4beb3, // soft gray-brown rock (legacy)
+  islandSand: 0xe8d4a8, // miniature beach sand
+  islandDirt: 0xc4a574, // earth under the grass cap
+  islandGrass: 0xb5d3a5, // tiny turf
+  lighthouseWhite: 0xf5f0e6,
+  lighthouseRed: 0xe89b9b,
+  lighthouseLight: 0xffe08a,
   obstacleLeaf: 0x93b793, // light leaf
-  obstacleLily: 0xb5d3a5 // pastel green lilypad
+  obstacleLily: 0xb5d3a5, // pastel green lilypad
+  obstacleRingRed: 0xe85a5a,
+  obstacleRingWhite: 0xf7f4ef,
+  buildingCream: 0xe6dfd2, // distant Haussmann limestone
+  buildingStone: 0xd4cdc0,
+  buildingRoof: 0xb89b8a, // soft zinc / terracotta roof
+  buildingAccent: 0xc9c2b4
 };
 
 // Create a ThreeJS material with papercraft characteristics
@@ -80,15 +92,14 @@ export function createPaperMaterial(colorCode) {
   });
 }
 
-// Special material for paper sailboat water to give transparent layered look
+// Flat fountain basin water
 export function createWaterMaterial() {
   return new THREE.MeshStandardMaterial({
     color: PALETTE.water,
-    roughness: 0.2,        // semi-glossy water surface
-    metalness: 0.1,
+    roughness: 0.28,
+    metalness: 0.04,
     transparent: true,
-    opacity: 0.85,
-    flatShading: true      // low-poly stylized waves
+    opacity: 0.82,
   });
 }
 

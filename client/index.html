@@ -20,37 +20,65 @@
             <div class="glass-card">
                 <div class="logo-area">
                     <h1 class="game-title">ToyBoat<span>ToyBoat</span></h1>
-                    <p class="subtitle">Sail your paper boat across the Parisian park fountain</p>
+                </div>
+
+                <div class="setup-section name-section">
+                    <h3>Your Name</h3>
+                    <input
+                        type="text"
+                        id="player-name"
+                        class="player-name-input"
+                        maxlength="16"
+                        placeholder="Enter sailor name"
+                        autocomplete="nickname"
+                        spellcheck="false"
+                    >
                 </div>
 
                 <div class="setup-grid">
+                    <!-- Character Selection -->
+                    <div class="setup-section">
+                        <h3>1. Choose Sailor</h3>
+                        <div class="card-options" id="character-options">
+                            <div class="option-card active" data-character="boy">
+                                <div class="option-preview"></div>
+                            </div>
+                            <div class="option-card" data-character="girl">
+                                <div class="option-preview"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Boat Selection -->
                     <div class="setup-section">
-                        <h3>1. Choose Sailboat</h3>
+                        <h3>2. Choose Wood Boat</h3>
                         <div class="card-options" id="boat-options">
                             <div class="option-card active" data-boat="standard">
-                                <div class="option-preview boat-preview-standard"></div>
-                                <span>Classic Fold</span>
+                                <div class="option-preview"></div>
+                                <span>Wood Sailboat</span>
+                                <small class="option-stat">Balanced speed &amp; hull</small>
                             </div>
                             <div class="option-card" data-boat="cutter">
-                                <div class="option-preview boat-preview-cutter"></div>
-                                <span>Cutter Rig</span>
+                                <div class="option-preview"></div>
+                                <span>Sloop</span>
+                                <small class="option-stat">Fast &amp; windy · fragile</small>
                             </div>
                             <div class="option-card" data-boat="pirate">
-                                <div class="option-preview boat-preview-pirate"></div>
-                                <span>Galleon</span>
+                                <div class="option-preview"></div>
+                                <span>Sail Boat</span>
+                                <small class="option-stat">Heavy tank · slow turn</small>
                             </div>
                         </div>
                     </div>
 
                     <!-- Color Customization -->
                     <div class="setup-section">
-                        <h3>2. Colors & Flag</h3>
+                        <h3>3. Colors & Flag</h3>
                         <div class="customization-controls">
                             <div class="control-group">
                                 <label for="boat-color">Hull Color</label>
                                 <div class="color-picker-wrapper">
-                                    <input type="color" id="boat-color" value="#ffb3ba">
+                                    <input type="color" id="boat-color" value="#c4a574">
                                 </div>
                             </div>
                             <div class="control-group">
@@ -73,19 +101,22 @@
 
                     <!-- Pushstick Selection -->
                     <div class="setup-section">
-                        <h3>3. Select Pushstick</h3>
+                        <h3>4. Select Pushstick</h3>
                         <div class="card-options" id="stick-options">
                             <div class="option-card active" data-stick="wooden">
-                                <div class="option-preview stick-preview-wood"></div>
+                                <div class="option-preview"></div>
                                 <span>Hickory Branch</span>
+                                <small class="option-stat">Steady all-round poke</small>
                             </div>
                             <div class="option-card" data-stick="brass">
-                                <div class="option-preview stick-preview-brass"></div>
+                                <div class="option-preview"></div>
                                 <span>Polished Brass</span>
+                                <small class="option-stat">Powerful · wilder aim</small>
                             </div>
                             <div class="option-card" data-stick="ribbon">
-                                <div class="option-preview stick-preview-ribbon"></div>
+                                <div class="option-preview"></div>
                                 <span>Ribbon Cane</span>
+                                <small class="option-stat">Soft &amp; precise guide</small>
                             </div>
                         </div>
                     </div>
@@ -109,6 +140,13 @@
                     </div>
                 </div>
 
+                <div class="score-panel glass-card-mini">
+                    <span class="score-label">Score</span>
+                    <span id="player-score" class="score-value">0</span>
+                    <span id="ring-streak" class="score-streak"></span>
+                    <span id="score-toast" class="score-toast" aria-live="polite"></span>
+                </div>
+
                 <!-- Wind Vane -->
                 <div class="wind-vane-container glass-card-mini">
                     <div class="wind-vane-arrow-wrapper">
@@ -124,18 +162,27 @@
             <!-- Bottom bar controls -->
             <div class="hud-row hud-bottom">
                 <div class="controls-hint glass-card-mini">
-                    <span>Move: <strong>A / D</strong> or <strong>← / →</strong> around the path</span>
+                    <span>Left: <strong>A</strong></span>
                     <span class="divider">|</span>
-                    <span>Action: <strong>SPACE</strong> or <strong>CLICK</strong> near boat to push</span>
+                    <span>Right: <strong>D</strong></span>
+                    <span class="divider">|</span>
+                    <span>Push: <strong>Click boat</strong> (or <strong>Space</strong> while aimed)</span>
+                    <span class="divider">|</span>
+                    <span>Orbit: <strong>Right-drag</strong></span>
+                    <span class="divider">|</span>
+                    <span>Menu: <strong>Esc</strong></span>
                 </div>
 
-                <div class="camera-toggle-container">
-                    <button id="btn-camera-toggle" class="btn-secondary">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                            <circle cx="12" cy="13" r="4"></circle>
-                        </svg>
-                        Change View
+                <div class="camera-toggle-container view-options" role="group" aria-label="View options">
+                    <span class="view-options-label">View</span>
+                    <button type="button" class="btn-secondary view-option active" data-camera="follow" title="Follow player (V)">
+                        Follow Player
+                    </button>
+                    <button type="button" class="btn-secondary view-option" data-camera="followBoat" title="Follow boat from behind (V)">
+                        Follow Boat
+                    </button>
+                    <button type="button" class="btn-secondary view-option" data-camera="overview" title="Bird's-eye overview (V)">
+                        Overview
                     </button>
                 </div>
             </div>
@@ -148,6 +195,31 @@
                 <p>The cardstock folded under the water pressure. Retrieve it and set sail again.</p>
                 <div class="margin-top-md">
                     <button id="btn-respawn" class="btn-primary">Repair & Relaunch</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Escape / pause menu -->
+        <div id="escape-menu" class="overlay-panel">
+            <div class="glass-card compact escape-menu-card">
+                <h2 class="escape-menu-title">Paused</h2>
+                <p class="escape-menu-subtitle">Dimanche au parc</p>
+
+                <div class="escape-audio-controls">
+                    <label class="escape-mute-row" for="music-mute">
+                        <input type="checkbox" id="music-mute">
+                        <span>Mute music</span>
+                    </label>
+
+                    <div class="escape-volume-row">
+                        <label for="music-volume">Volume</label>
+                        <input type="range" id="music-volume" min="0" max="100" step="1" value="45">
+                        <span id="music-volume-label" class="escape-volume-value">45%</span>
+                    </div>
+                </div>
+
+                <div class="action-bar escape-menu-actions">
+                    <button id="btn-resume" class="btn-primary">Resume</button>
                 </div>
             </div>
         </div>
