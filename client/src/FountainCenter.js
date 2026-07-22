@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PALETTE, createPaperMaterial } from './StyleSystem.js';
+import { assetUrl } from './assetUrl.js';
 
 /** Park fountain — Poly by Google (CC-BY) https://poly.pizza/m/0YTMlW0CUHU */
-const FOUNTAIN_URL = '/models/fountain-center.glb';
+
+const FOUNTAIN_URL = assetUrl('models/fountain-center.glb');
 const TARGET_HEIGHT = 24;
 
 /**

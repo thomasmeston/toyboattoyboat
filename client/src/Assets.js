@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createPaperMaterial, PALETTE } from './StyleSystem.js';
+import { assetUrl } from './assetUrl.js';
 
 // Procedural geometry creators for papercraft assets
 
 /** "Lighthouse" — Poly by Google (CC-BY) https://poly.pizza/m/7H8is9jrGeB */
-const LIGHTHOUSE_URL = '/models/lighthouse.glb';
+
+const LIGHTHOUSE_URL = assetUrl('models/lighthouse.glb');
 let lighthouseTemplatePromise = null;
 
 function loadLighthouseTemplate() {
@@ -390,11 +392,12 @@ export function createParkScenery(fountainRadius) {
   const group = new THREE.Group();
 
   // Fountain Outer Rim (thick paper polygon stone edge)
-  const rimGeo = new THREE.RingGeometry(fountainRadius, fountainRadius + 2.5, 32);
+  const rimOuter = fountainRadius + 3.8;
+  const rimGeo = new THREE.RingGeometry(fountainRadius, rimOuter, 32);
   rimGeo.rotateX(-Math.PI / 2);
   
   // Extrude slightly to give it 3D depth like a raised cardstock rim
-  const rimMeshGeo = new THREE.TorusGeometry(fountainRadius + 1.25, 1.25, 4, 48);
+  const rimMeshGeo = new THREE.TorusGeometry(fountainRadius + 1.9, 1.55, 4, 48);
   rimMeshGeo.rotateX(Math.PI / 2);
   rimMeshGeo.scale(1, 0.4, 1); // squish vertically
   const rimMat = createPaperMaterial(PALETTE.fountainRim);
@@ -405,7 +408,7 @@ export function createParkScenery(fountainRadius) {
   group.add(rim);
 
   // Cobblestone path surrounding fountain where kids walk
-  const pathGeo = new THREE.RingGeometry(fountainRadius + 2.5, fountainRadius + 15, 32);
+  const pathGeo = new THREE.RingGeometry(rimOuter, fountainRadius + 16.5, 32);
   pathGeo.rotateX(-Math.PI / 2);
   const pathMat = createPaperMaterial(PALETTE.stonePath);
   const path = new THREE.Mesh(pathGeo, pathMat);

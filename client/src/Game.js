@@ -7,9 +7,10 @@ import { createAnimatedChildAvatar } from './ChildAvatar.js';
 import { createWoodBoat } from './BoatModels.js';
 import { createCenterFountain, updateCenterFountain } from './FountainCenter.js';
 import { BackgroundMusic } from './BackgroundMusic.js';
+import { AmbientBeds } from './AmbientBeds.js';
 import { startMenuPreviews } from './MenuPreviews.js';
 
-const INNER_PATH_RADIUS = 102;
+const INNER_PATH_RADIUS = 104.5;
 const FOUNTAIN_RADIUS = 100;
 const WALK_SPEED = 0.006; // rad per frame-unit when holding A/D
 
@@ -22,6 +23,12 @@ export class Game {
     this._cameraModes = ['follow', 'followBoat', 'overview'];
     this.menuOpen = false;
     this.music = new BackgroundMusic();
+    this.ambients = new AmbientBeds();
+    this._boatBow = new THREE.Vector3();
+    this._boatLook = new THREE.Vector3();
+    this._physFwd = new THREE.Vector3();
+    this._boatAxisX = new THREE.Vector3();
+    this._boatAxisZ = new THREE.Vector3();
 
     // Orbit / zoom around the local player (follow mode)
     this.camYawOffset = 0; // 0 = outside the rim, behind the child
@@ -64,6 +71,8 @@ export class Game {
     
     // Animation flags
     this.pokeAnimations = {}; // { socketId: timeElapsed }
+    this.lassoAnimations = {}; // { socketId: { t, duration } }
+    this.lassoMeshes = {}; // rope Line meshes
     this._lastFrameTime = performance.now();
 
     // Init ThreeJS
@@ -191,40 +200,37 @@ export class Game {
 
       this.camera.lookAt(px, lookY, pz);
     } else if (this.activeCameraMode === 'followBoat') {
-      // Chase cam from directly behind the boat, looking forward along its heading
+      // True stern chase: camera sits aft of the hull, looking over the bow
       const data = this.localId ? this.boatsData[this.localId] : null;
       const bx = boat ? boat.position.x : Math.cos(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
       const bz = boat ? boat.position.z : Math.sin(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
+      const by = boat ? boat.position.y : 0;
 
-      // Prefer velocity as bow direction; else server/mesh yaw (game forward = cos/sin on XZ)
-      let fx;
-      let fz;
-      const spd = data ? Math.hypot(data.vx, data.vy) : 0;
-      if (spd > 0.08) {
-        fx = data.vx / spd;
-        fz = data.vy / spd;
-      } else {
-        const heading = data?.angle ?? boat?.rotation.y ?? (this.playerAngle + Math.PI);
-        fx = Math.cos(heading);
-        fz = Math.sin(heading);
-      }
+      const bow = this.getBoatBowDirection(boat, data);
+      const dist = Math.max(9, this.camDistance * 0.4);
+      const height = Math.max(3.2, this.camHeight * 0.32);
 
-      // Orbit around the aft axis; 0 offset = straight behind the stern
-      const aftAngle = Math.atan2(fz, fx) + Math.PI + this.camBoatYawOffset;
-      const dist = Math.max(12, this.camDistance * 0.65);
-      const height = Math.max(6, this.camHeight * 0.7);
+      // Orbit around stern: rotate bow 180° (+ optional yaw drag), stay behind hull
+      const yaw = this.camBoatYawOffset;
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      const aftX = -(bow.x * cosY - bow.z * sinY);
+      const aftZ = -(bow.x * sinY + bow.z * cosY);
 
-      const targetCamX = bx + Math.cos(aftAngle) * dist;
-      const targetCamZ = bz + Math.sin(aftAngle) * dist;
+      const targetCamX = bx + aftX * dist;
+      const targetCamZ = bz + aftZ * dist;
+      const targetCamY = by + height;
 
       const snap = this._snapCameraOnce;
-      const lerp = snap ? 1 : 0.16;
+      const lerp = snap ? 1 : 0.28;
       this.camera.position.x += (targetCamX - this.camera.position.x) * lerp;
-      this.camera.position.y += (height - this.camera.position.y) * lerp;
+      this.camera.position.y += (targetCamY - this.camera.position.y) * lerp;
       this.camera.position.z += (targetCamZ - this.camera.position.z) * lerp;
       if (snap) this._snapCameraOnce = false;
-      // Look past the bow so the view reads as riding behind the boat
-      this.camera.lookAt(bx + fx * 6, 1.1, bz + fz * 6);
+
+      // Look past the bow so the frame reads as sailing from the stern
+      this._boatLook.set(bx + bow.x * 12, by + 1.1, bz + bow.z * 12);
+      this.camera.lookAt(this._boatLook);
     } else {
       // Bird's-eye overview of the whole fountain
       this.camera.position.x += (0 - this.camera.position.x) * 0.06;
@@ -232,6 +238,34 @@ export class Game {
       this.camera.position.z += (90 - this.camera.position.z) * 0.06;
       this.camera.lookAt(0, 0, 0);
     }
+  }
+
+  /**
+   * World-space bow direction on XZ, taken from the boat mesh axes
+   * (models may face +X or ±Z) aligned to physics heading.
+   */
+  getBoatBowDirection(boat, data) {
+    const angle = data?.angle ?? boat?.rotation.y ?? (this.playerAngle + Math.PI);
+    this._physFwd.set(Math.cos(angle), 0, Math.sin(angle));
+
+    if (!boat) {
+      return this._boatBow.copy(this._physFwd);
+    }
+
+    boat.updateMatrixWorld(true);
+    const e = boat.matrixWorld.elements;
+    // Local +X and +Z projected onto the water plane
+    const xAxis = this._boatAxisX.set(e[0], 0, e[2]);
+    const zAxis = this._boatAxisZ.set(e[8], 0, e[10]);
+    if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0);
+    if (zAxis.lengthSq() < 1e-8) zAxis.set(0, 0, 1);
+    xAxis.normalize();
+    zAxis.normalize();
+
+    const useZ = Math.abs(zAxis.dot(this._physFwd)) > Math.abs(xAxis.dot(this._physFwd));
+    this._boatBow.copy(useZ ? zAxis : xAxis);
+    if (this._boatBow.dot(this._physFwd) < 0) this._boatBow.negate();
+    return this._boatBow;
   }
 
   setCameraMode(mode) {
@@ -245,6 +279,7 @@ export class Game {
       this.camBoatYawOffset = 0; // snap to true aft on enter
       this._snapCameraOnce = true;
     }
+    this.ambients?.setMode(mode);
     this.syncCameraButtons();
   }
 
@@ -263,7 +298,10 @@ export class Game {
   initNetwork() {
     // Establish connection to Server
     // Default to local server port 3000
-    const serverUrl = window.location.hostname === 'localhost' ? 'http://localhost:3005' : window.location.origin;
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const serverUrl =
+      import.meta.env.VITE_SERVER_URL ||
+      (isLocal ? 'http://localhost:3005' : window.location.origin);
     this.socket = io(serverUrl);
 
     this.socket.on('connect', () => {
@@ -382,6 +420,11 @@ export class Game {
       this.avatarControllers[data.id]?.setPoking();
     });
 
+    this.socket.on('boatLassoed', (data) => {
+      this.startLassoVisual(data.id);
+      this.avatarControllers[data.id]?.setPoking();
+    });
+
     // Boat respawned / repaired
     this.socket.on('boatRespawned', (data) => {
       if (this.boatMeshes[data.id]) {
@@ -475,6 +518,79 @@ export class Game {
       this.scene.remove(this.pushstickMeshes[id]);
       delete this.pushstickMeshes[id];
     }
+    this.removeLassoVisual(id);
+  }
+
+  startLassoVisual(id) {
+    this.removeLassoVisual(id);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xc4a574,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.95,
+    });
+    const line = new THREE.Line(geo, mat);
+    line.frustumCulled = false;
+    this.scene.add(line);
+    this.lassoMeshes[id] = line;
+    this.lassoAnimations[id] = { t: 0, duration: 1.05 };
+  }
+
+  removeLassoVisual(id) {
+    if (this.lassoMeshes[id]) {
+      this.scene.remove(this.lassoMeshes[id]);
+      this.lassoMeshes[id].geometry?.dispose();
+      this.lassoMeshes[id].material?.dispose();
+      delete this.lassoMeshes[id];
+    }
+    delete this.lassoAnimations[id];
+  }
+
+  updateLassoVisuals(dt) {
+    for (const id of Object.keys(this.lassoAnimations)) {
+      const anim = this.lassoAnimations[id];
+      const line = this.lassoMeshes[id];
+      const avatar = this.avatarMeshes[id];
+      const boat = this.boatMeshes[id];
+      const controller = this.avatarControllers[id];
+      anim.t += dt;
+
+      if (!line || !avatar || !boat || boat.visible === false) {
+        this.removeLassoVisual(id);
+        continue;
+      }
+
+      const grip = controller?.getStickGripWorld?.(new THREE.Vector3())
+        ?? avatar.localToWorld(new THREE.Vector3(0.45, 1.35, 0.15));
+      const boatPos = new THREE.Vector3(boat.position.x, 0.55, boat.position.z);
+
+      // Throw: rope tip races out to the boat, then stays taut while reeling
+      const throwT = Math.min(1, anim.t / 0.22);
+      const tip = grip.clone().lerp(boatPos, throwT);
+      const pos = line.geometry.attributes.position.array;
+      pos[0] = grip.x;
+      pos[1] = grip.y;
+      pos[2] = grip.z;
+      pos[3] = tip.x;
+      pos[4] = tip.y;
+      pos[5] = tip.z;
+      line.geometry.attributes.position.needsUpdate = true;
+
+      if (anim.t > anim.duration) {
+        this.removeLassoVisual(id);
+      } else if (anim.t > anim.duration - 0.2 && line.material) {
+        line.material.opacity = Math.max(0, (anim.duration - anim.t) / 0.2);
+      }
+    }
+  }
+
+  emitLassoBoat() {
+    if (!this.localId || !this.boatMeshes[this.localId]) return;
+    const data = this.boatsData[this.localId];
+    if (data?.isSunk) return;
+    this.socket.emit('lassoBoat');
   }
 
   bindUI() {
@@ -559,6 +675,8 @@ export class Game {
       this._menuPreviews = null;
 
       this.music.start();
+      this.ambients.start();
+      this.ambients.setMode(this.activeCameraMode);
       this.socket.emit('joinGame', {
         ...this.customization,
         playerAngle: this.playerAngle,
@@ -582,7 +700,7 @@ export class Game {
     // Escape menu: mute + volume
     this.bindEscapeMenu();
 
-    // 9. Keys: A = left around rim, D = right, Space = stick push, V = camera, Esc = menu
+    // 9. Keys: A/D rim walk, Space poke, E lasso, V camera, Esc menu
     window.addEventListener('keydown', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
 
@@ -602,6 +720,8 @@ export class Game {
       } else if (e.key === ' ') {
         e.preventDefault();
         if (!e.repeat) this.emitPokeBoat();
+      } else if (e.key === 'e' || e.key === 'E') {
+        if (!e.repeat) this.emitLassoBoat();
       } else if (e.key === 'v' || e.key === 'V') {
         this.cycleCameraMode();
       }
@@ -684,6 +804,8 @@ export class Game {
     const volumeEl = document.getElementById('music-volume');
     const volumeLabel = document.getElementById('music-volume-label');
     const volumeRow = volumeEl?.closest('.escape-volume-row');
+    const sfxEl = document.getElementById('sfx-volume');
+    const sfxLabel = document.getElementById('sfx-volume-label');
 
     const syncUi = () => {
       muteEl.checked = this.music.muted;
@@ -691,6 +813,10 @@ export class Game {
       volumeLabel.textContent = `${Math.round(this.music.volume * 100)}%`;
       volumeRow?.classList.toggle('is-muted', this.music.muted);
       volumeEl.disabled = this.music.muted;
+      if (sfxEl && sfxLabel) {
+        sfxEl.value = String(Math.round(this.ambients.volume * 100));
+        sfxLabel.textContent = `${Math.round(this.ambients.volume * 100)}%`;
+      }
     };
 
     syncUi();
@@ -704,6 +830,11 @@ export class Game {
       const pct = Number(volumeEl.value) / 100;
       this.music.setVolume(pct);
       if (this.music.muted && pct > 0) this.music.setMuted(false);
+      syncUi();
+    });
+
+    sfxEl?.addEventListener('input', () => {
+      this.ambients.setVolume(Number(sfxEl.value) / 100);
       syncUi();
     });
 
@@ -887,6 +1018,7 @@ export class Game {
           const lookZ = avatar.position.z + moveDz * 20;
           avatar.lookAt(lookX, 0, lookZ);
         } else if (boat) {
+          // When stopped, always face the boat
           avatar.lookAt(boat.position.x, 0, boat.position.z);
         } else {
           avatar.lookAt(0, 0, 0);
@@ -928,7 +1060,10 @@ export class Game {
       }
     }
 
-    // 5. Camera
+    // 5. Lasso rope visuals
+    this.updateLassoVisuals(dt);
+
+    // 6. Camera
     this.updateCameraPosition();
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);

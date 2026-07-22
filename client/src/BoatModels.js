@@ -5,6 +5,7 @@ import {
   createCutterBoat,
   createGalleonBoat,
 } from './Assets.js';
+import { assetUrl } from './assetUrl.js';
 
 /**
  * Wood boat models (Poly Pizza):
@@ -12,10 +13,11 @@ import {
  * - cutter:   "Sailboat" — Poly by Google (CC-BY) https://poly.pizza/m/6okvxHsSdzO
  * - pirate:   "Sail Boat" — Quaternius (CC0) https://poly.pizza/m/BgSZXwmm7k
  */
+
 const BOAT_URLS = {
-  standard: '/models/boat-wooden-sail.glb',
-  cutter: '/models/boat-sailboat.glb',
-  pirate: '/models/boat-quaternius-sail.glb',
+  standard: assetUrl('models/boat-wooden-sail.glb'),
+  cutter: assetUrl('models/boat-sailboat.glb'),
+  pirate: assetUrl('models/boat-quaternius-sail.glb'),
 };
 
 const TARGET_LENGTH = {

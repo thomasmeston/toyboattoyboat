@@ -1,5 +1,7 @@
+import { assetUrl } from './assetUrl.js';
+
 const STORAGE_KEY = 'toyboattoyboat-music';
-const TRACK_URL = '/audio/dimanche-au-parc.mp3';
+const TRACK_URL = assetUrl('audio/dimanche-au-parc.mp3');
 const DEFAULT_VOLUME = 0.45;
 
 function clamp01(value) {

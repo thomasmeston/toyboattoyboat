@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // GitHub Pages project site: set VITE_BASE=/toyboattoyboat/ in CI
+  base: process.env.VITE_BASE || '/',
   root: '.',
   server: {
     port: 5181,
@@ -9,5 +11,5 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-  }
+  },
 });

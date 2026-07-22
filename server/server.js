@@ -25,12 +25,16 @@ const io = new Server(httpServer, {
 
 // Game World Constants
 const FOUNTAIN_RADIUS = 100;
-const INNER_PATH_RADIUS = 102; // Path where children walk
+const INNER_PATH_RADIUS = 104.5; // Path where children walk (just outside wider rim)
 // Visual centerpiece ~radius 12–13; add margin so boat bows (length up to ~7) don't clip stone
 const CENTER_FOUNTAIN_RADIUS = 20;
 const POKE_RANGE = FOUNTAIN_RADIUS; // half the fountain diameter
 const PUSH_FORCE = 15;
 const POKE_TURN = 0.22; // how strongly off-center hits yaw the boat
+const LASSO_RANGE = FOUNTAIN_RADIUS;
+const LASSO_PULL = 22; // pull strength toward the sailor while reeling
+const LASSO_DURATION = 0.9; // seconds of active reel
+const LASSO_COOLDOWN = 1.6;
 const DRAG = 0.96; // Water friction coefficient
 const COLLISION_DAMAGE = 15;
 const BOAT_HIT_RADIUS = 5; // max accepted click offset from boat center
@@ -464,6 +468,63 @@ function applyBoatPoke(playerId, hitX, hitY) {
   return true;
 }
 
+/** Throw a string and reel the boat back toward the sailor on the rim. */
+function applyBoatLasso(playerId) {
+  const player = players[playerId];
+  if (!player || !player.isPlaying || !player.boat || player.boat.isSunk) return false;
+  if (player.lassoCooldown && player.lassoCooldown > 0) return false;
+
+  const boat = player.boat;
+  const px = Math.cos(player.playerAngle) * INNER_PATH_RADIUS;
+  const py = Math.sin(player.playerAngle) * INNER_PATH_RADIUS;
+  const dist = Math.hypot(boat.x - px, boat.y - py);
+  if (dist > LASSO_RANGE) return false;
+  // Already at their feet — nothing to reel
+  if (dist < BOAT_RADIUS + 2) return false;
+
+  player.lasso = { t: LASSO_DURATION };
+  player.lassoCooldown = LASSO_COOLDOWN;
+  io.emit('boatLassoed', { id: playerId });
+  return true;
+}
+
+function updateLassoPull(player, dt) {
+  if (player.lassoCooldown > 0) {
+    player.lassoCooldown = Math.max(0, player.lassoCooldown - dt);
+  }
+  if (!player.lasso || !player.boat || player.boat.isSunk) {
+    player.lasso = null;
+    return;
+  }
+
+  const boat = player.boat;
+  player.lasso.t -= dt;
+  const px = Math.cos(player.playerAngle) * INNER_PATH_RADIUS;
+  const py = Math.sin(player.playerAngle) * INNER_PATH_RADIUS;
+  let dx = px - boat.x;
+  let dy = py - boat.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  dx /= dist;
+  dy /= dist;
+
+  const boatStats = getBoatStats(boat);
+  const pull = (LASSO_PULL / Math.max(0.5, boatStats.mass)) * dt;
+  boat.vx += dx * pull;
+  boat.vy += dy * pull;
+
+  // Ease yaw toward the pull so the stern faces the sailor
+  const pullAngle = Math.atan2(dy, dx);
+  let angleDiff = pullAngle - boat.angle;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  boat.angle += angleDiff * 0.12;
+
+  // Stop reeling when close to the rim or timer ends
+  if (player.lasso.t <= 0 || dist < FOUNTAIN_RADIUS - BOAT_RADIUS - 1.5) {
+    player.lasso = null;
+  }
+}
+
 function updateComputerPlayers(dt) {
   for (const id in players) {
     const player = players[id];
@@ -678,6 +739,10 @@ setInterval(() => {
 
     const boat = player.boat;
     if (boat.isSunk) {
+      player.lasso = null;
+      if (player.lassoCooldown > 0) {
+        player.lassoCooldown = Math.max(0, player.lassoCooldown - DT);
+      }
       if (boat.ringStreak) boat.ringStreak = 0;
       updatedBoats.push({
         id,
@@ -693,6 +758,8 @@ setInterval(() => {
       });
       continue;
     }
+
+    updateLassoPull(player, DT);
 
     const stats = getBoatStats(boat);
 
@@ -867,6 +934,11 @@ io.on('connection', (socket) => {
   socket.on('pokeBoat', (data = {}) => {
     if (typeof data.hitX !== 'number' || typeof data.hitY !== 'number') return;
     applyBoatPoke(socket.id, data.hitX, data.hitY);
+  });
+
+  // Client lassos their boat — reel it back toward the rim
+  socket.on('lassoBoat', () => {
+    applyBoatLasso(socket.id);
   });
 
   // Client requesting a respawn/repair of their boat

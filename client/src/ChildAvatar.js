@@ -2,19 +2,20 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { createChildAvatar as createProceduralChild } from './Assets.js';
+import { assetUrl } from './assetUrl.js';
 
 /** Quaternius "Henry" (CC0) — https://poly.pizza/m/yEdSk8tRKc */
 const CHARACTERS = {
   boy: {
-    modelUrl: '/models/parisian-boy.glb',
-    runUrl: '/models/parisian-boy-run.glb',
+    modelUrl: assetUrl('models/parisian-boy.glb'),
+    runUrl: assetUrl('models/parisian-boy-run.glb'),
   },
   girl: {
-    modelUrl: '/models/parisian-girl.glb',
-    runUrl: '/models/parisian-girl-run.glb',
+    modelUrl: assetUrl('models/parisian-girl.glb'),
+    runUrl: assetUrl('models/parisian-girl-run.glb'),
   },
   henry: {
-    modelUrl: '/models/henry-child.glb',
+    modelUrl: assetUrl('models/henry-child.glb'),
     runUrl: null,
   },
 };
