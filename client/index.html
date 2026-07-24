@@ -22,6 +22,35 @@
                     <h1 class="game-title">ToyBoat<span>ToyBoat</span></h1>
                 </div>
 
+                <div class="setup-section play-mode-section">
+                    <h3>Play Mode</h3>
+                    <div class="play-mode-options" role="group" aria-label="Play mode">
+                        <button type="button" class="play-mode-btn active" data-play-mode="solo">
+                            Solo
+                            <small>You + park boats</small>
+                        </button>
+                        <button type="button" class="play-mode-btn" data-play-mode="multiplayer">
+                            Multiplayer
+                            <small>Join via tunnel</small>
+                        </button>
+                    </div>
+                    <div id="solo-mode-panel" class="play-mode-panel">
+                        <p class="server-url-hint">Plays on your local server (<code>npm run dev</code>). Park bots keep you company.</p>
+                    </div>
+                    <div id="multiplayer-mode-panel" class="play-mode-panel" hidden>
+                        <label class="server-url-label" for="server-url">Server URL</label>
+                        <input
+                            type="url"
+                            id="server-url"
+                            class="player-name-input server-url-input"
+                            placeholder="https://….trycloudflare.com"
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <p class="server-url-hint">Paste your Cloudflare Tunnel URL. Friends can open the same Pages link with <code>?server=</code> that URL.</p>
+                    </div>
+                </div>
+
                 <div class="setup-section name-section">
                     <h3>Your Name</h3>
                     <input

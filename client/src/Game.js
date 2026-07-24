@@ -21,6 +21,7 @@ export class Game {
     this.playerAngle = Math.random() * Math.PI * 2;
     this.activeCameraMode = 'follow'; // 'follow' | 'followBoat' | 'overview'
     this._cameraModes = ['follow', 'followBoat', 'overview'];
+    this.playMode = 'solo'; // 'solo' | 'multiplayer'
     this.menuOpen = false;
     this.music = new BackgroundMusic();
     this.ambients = new AmbientBeds();
@@ -295,29 +296,86 @@ export class Game {
     });
   }
 
-  initNetwork() {
-    // Establish connection to Server
-    // Default to local server port 3000
-    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    const serverUrl =
-      import.meta.env.VITE_SERVER_URL ||
-      (isLocal ? 'http://localhost:3005' : window.location.origin);
-    this.socket = io(serverUrl);
+  isLocalHost() {
+    return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  }
 
-    this.socket.on('connect', () => {
-      this.localId = this.socket.id;
+  getPlayMode() {
+    return this.playMode === 'multiplayer' ? 'multiplayer' : 'solo';
+  }
+
+  setPlayMode(mode) {
+    this.playMode = mode === 'multiplayer' ? 'multiplayer' : 'solo';
+    try {
+      localStorage.setItem('toyboattoyboat-play-mode', this.playMode);
+    } catch {
+      /* ignore */
+    }
+
+    document.querySelectorAll('.play-mode-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.playMode === this.playMode);
+    });
+    const soloPanel = document.getElementById('solo-mode-panel');
+    const mpPanel = document.getElementById('multiplayer-mode-panel');
+    if (soloPanel) soloPanel.hidden = this.playMode !== 'solo';
+    if (mpPanel) mpPanel.hidden = this.playMode !== 'multiplayer';
+  }
+
+  resolveServerUrl() {
+    const isLocal = this.isLocalHost();
+
+    // Solo always prefers the local Socket.IO server
+    if (this.getPlayMode() === 'solo') {
+      if (isLocal) return 'http://localhost:3005';
+      // On Pages/itch, solo still needs a reachable host — use tunnel if provided
+    }
+
+    try {
+      const q = new URLSearchParams(window.location.search).get('server');
+      if (q) return q.replace(/\/$/, '');
+    } catch {
+      /* ignore */
+    }
+    try {
+      const saved = localStorage.getItem('toyboattoyboat-server-url');
+      if (saved) return saved.replace(/\/$/, '');
+    } catch {
+      /* ignore */
+    }
+    if (import.meta.env.VITE_SERVER_URL) {
+      return String(import.meta.env.VITE_SERVER_URL).replace(/\/$/, '');
+    }
+    return isLocal ? 'http://localhost:3005' : window.location.origin;
+  }
+
+  initNetwork() {
+    const serverUrl = this.resolveServerUrl();
+    this.connectSocket(serverUrl);
+  }
+
+  connectSocket(serverUrl) {
+    this._serverUrl = serverUrl;
+    console.log('Game server:', serverUrl);
+    this.socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+    this.bindSocketHandlers();
+  }
+
+  bindSocketHandlers() {
+    const s = this.socket;
+    if (!s || s._toyboatBound) return;
+    s._toyboatBound = true;
+
+    s.on('connect', () => {
+      this.localId = s.id;
       console.log('Connected to server, Socket ID:', this.localId);
     });
 
-    // Receive static obstacles setup from server
-    this.socket.on('initGame', (data) => {
-      // Clean up existing obstacles if any
+    s.on('initGame', (data) => {
       for (const id in this.obstacleMeshes) {
         this.scene.remove(this.obstacleMeshes[id]);
       }
       this.obstacleMeshes = {};
 
-      // Spawn new obstacles (lighthouse uses async GLB load)
       Promise.all(
         data.obstacles.map(async (obs) => {
           const mesh = await createObstacleMesh(obs.type, obs.radius, { facing: obs.facing });
@@ -328,9 +386,7 @@ export class Game {
       ).catch((err) => console.error('Failed to spawn obstacles:', err));
     });
 
-    // Another player joined (also fires for self after Set Sail)
-    this.socket.on('playerJoined', (data) => {
-      // Keep local rim walk angle in sync with the boat the server just placed
+    s.on('playerJoined', (data) => {
       if (data.id === this.localId) {
         this.playerAngle = data.playerAngle;
       }
@@ -345,12 +401,10 @@ export class Game {
       });
     });
 
-    // Update coordinates and physics from server broadcast
-    this.socket.on('stateUpdate', (data) => {
+    s.on('stateUpdate', (data) => {
       this.wind = data.wind;
       this.updateWindVaneHUD();
 
-      // Sync rim avatars (bots + remote humans)
       if (data.avatars) {
         data.avatars.forEach(({ id, angle }) => {
           if (id === this.localId) return;
@@ -363,16 +417,12 @@ export class Game {
 
       data.boats.forEach((boatUpdate) => {
         const id = boatUpdate.id;
-        
-        // Cache boat positions for interpolation
         this.boatsData[id] = boatUpdate;
 
-        // If it's our boat, update HUD damage bar
         if (id === this.localId) {
           const dmgBar = document.getElementById('damage-bar');
           if (dmgBar) {
             dmgBar.style.width = `${boatUpdate.damage}%`;
-            // Change progress bar color based on condition
             if (boatUpdate.damage > 50) {
               dmgBar.style.background = 'linear-gradient(90deg, #a8e6cf, #dcedc1)';
             } else if (boatUpdate.damage > 20) {
@@ -384,7 +434,6 @@ export class Game {
 
           this.updateScoreHUD(boatUpdate.score, boatUpdate.ringStreak);
 
-          // Handle Game Over / Sinking Screen
           if (boatUpdate.isSunk) {
             document.getElementById('sink-screen').classList.add('active');
           } else {
@@ -394,7 +443,7 @@ export class Game {
       });
     });
 
-    this.socket.on('ringCleared', (data) => {
+    s.on('ringCleared', (data) => {
       this.updateScoreHUD(data.score, data.ringStreak);
       const toast = document.getElementById('score-toast');
       if (!toast) return;
@@ -406,37 +455,33 @@ export class Game {
       this._scoreToastTimer = setTimeout(() => toast.classList.remove('visible'), 1400);
     });
 
-    // Another player moved their child avatar
-    this.socket.on('playerMoved', (data) => {
+    s.on('playerMoved', (data) => {
       if (this.playerState[data.id]) {
         this.playerState[data.id].prevAngle = this.playerState[data.id].angle;
         this.playerState[data.id].angle = data.angle;
       }
     });
 
-    // Boat poked trigger (start poke animation)
-    this.socket.on('boatPoked', (data) => {
+    s.on('boatPoked', (data) => {
       this.pokeAnimations[data.id] = 0;
       this.avatarControllers[data.id]?.setPoking();
     });
 
-    this.socket.on('boatLassoed', (data) => {
+    s.on('boatLassoed', (data) => {
       this.startLassoVisual(data.id);
       this.avatarControllers[data.id]?.setPoking();
     });
 
-    // Boat respawned / repaired
-    this.socket.on('boatRespawned', (data) => {
+    s.on('boatRespawned', (data) => {
       if (this.boatMeshes[data.id]) {
         this.boatsData[data.id] = data.boat;
         this.boatMeshes[data.id].position.set(data.boat.x, 0, data.boat.y);
-        this.boatMeshes[data.id].rotation.y = data.boat.angle;
+        this.boatMeshes[data.id].rotation.y = meshYawFromPhysics(data.boat.angle);
         this.boatMeshes[data.id].scale.set(1, 1, 1);
       }
     });
 
-    // Player disconnected
-    this.socket.on('playerLeft', (data) => {
+    s.on('playerLeft', (data) => {
       this.cleanPlayerVisuals(data.id);
       delete this.playerState[data.id];
       delete this.boatsData[data.id];
@@ -644,6 +689,21 @@ export class Game {
       });
     });
 
+    // Play mode (solo / multiplayer)
+    let initialMode = 'solo';
+    try {
+      const qServer = new URLSearchParams(window.location.search).get('server');
+      const savedMode = localStorage.getItem('toyboattoyboat-play-mode');
+      if (qServer) initialMode = 'multiplayer';
+      else if (savedMode === 'solo' || savedMode === 'multiplayer') initialMode = savedMode;
+    } catch {
+      /* ignore */
+    }
+    this.setPlayMode(initialMode);
+    document.querySelectorAll('.play-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => this.setPlayMode(btn.dataset.playMode));
+    });
+
     // Name field
     const nameInput = document.getElementById('player-name');
     if (nameInput) {
@@ -657,8 +717,21 @@ export class Game {
       });
     }
 
+    // Multiplayer server URL (Cloudflare Tunnel / hosted)
+    const serverInput = document.getElementById('server-url');
+    if (serverInput) {
+      try {
+        const q = new URLSearchParams(window.location.search).get('server');
+        const saved = localStorage.getItem('toyboattoyboat-server-url');
+        if (q) serverInput.value = q;
+        else if (saved) serverInput.value = saved;
+      } catch {
+        /* ignore */
+      }
+    }
+
     // 6. Play Button Click
-    document.getElementById('btn-play').addEventListener('click', () => {
+    document.getElementById('btn-play').addEventListener('click', async () => {
       const nameEl = document.getElementById('player-name');
       const name = (nameEl?.value || '').trim().slice(0, 16) || 'Sailor';
       this.customization.playerName = name;
@@ -666,6 +739,57 @@ export class Game {
         localStorage.setItem('toyboattoyboat-player-name', name);
       } catch {
         /* ignore */
+      }
+
+      const serverEl = document.getElementById('server-url');
+      const typedServer = (serverEl?.value || '').trim().replace(/\/$/, '');
+      if (this.getPlayMode() === 'multiplayer') {
+        try {
+          if (typedServer) localStorage.setItem('toyboattoyboat-server-url', typedServer);
+          else localStorage.removeItem('toyboattoyboat-server-url');
+        } catch {
+          /* ignore */
+        }
+        if (!this.isLocalHost() && !typedServer && !import.meta.env.VITE_SERVER_URL) {
+          const hasQuery = !!new URLSearchParams(window.location.search).get('server');
+          if (!hasQuery) {
+            alert('Multiplayer needs a server URL.\nPaste your Cloudflare Tunnel link (https://….trycloudflare.com), then try again.');
+            return;
+          }
+        }
+      } else if (!this.isLocalHost()) {
+        // Solo on GitHub Pages still needs a reachable Socket.IO host
+        const remote = typedServer
+          || localStorage.getItem('toyboattoyboat-server-url')
+          || import.meta.env.VITE_SERVER_URL
+          || new URLSearchParams(window.location.search).get('server');
+        if (!remote) {
+          alert('Solo on this site still needs your game server.\nChoose Multiplayer and paste your Cloudflare Tunnel URL, or play Solo at http://localhost:5181 with npm run dev.');
+          return;
+        }
+      }
+
+      const targetUrl = this.resolveServerUrl();
+      if (!this.socket?.connected || this._serverUrl !== targetUrl) {
+        this.socket?.removeAllListeners();
+        this.socket?.disconnect();
+        this.connectSocket(targetUrl);
+        await new Promise((resolve) => {
+          if (this.socket.connected) {
+            resolve();
+            return;
+          }
+          const t = setTimeout(resolve, 4000);
+          this.socket.once('connect', () => {
+            clearTimeout(t);
+            resolve();
+          });
+        });
+      }
+
+      if (!this.socket?.connected) {
+        alert(`Could not connect to game server:\n${targetUrl}\n\nIs npm run dev running? Is the Cloudflare tunnel still open?`);
+        return;
       }
 
       document.getElementById('start-screen').classList.remove('active');
