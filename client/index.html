@@ -202,6 +202,8 @@
                     <span>Orbit: <strong>Right-drag</strong></span>
                     <span class="divider">|</span>
                     <span>Menu: <strong>Esc</strong></span>
+                    <span class="divider">|</span>
+                    <span>Dev: <strong>~</strong></span>
                 </div>
 
                 <div class="camera-toggle-container view-options" role="group" aria-label="View options">
@@ -257,7 +259,31 @@
 
                 <div class="action-bar escape-menu-actions">
                     <button id="btn-resume" class="btn-primary">Resume</button>
+                    <button id="btn-restart" class="btn-secondary">Restart Game</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Dev Mode (~) -->
+        <div id="dev-panel" class="dev-panel" aria-hidden="true">
+            <div class="dev-panel-card">
+                <header class="dev-panel-header">
+                    <div>
+                        <h2 class="dev-panel-title">Dev Mode</h2>
+                        <p class="dev-panel-subtitle">Press <kbd>~</kbd> to toggle</p>
+                    </div>
+                    <div class="dev-panel-actions">
+                        <button type="button" id="dev-reset" class="btn-secondary">Reset</button>
+                        <button type="button" id="dev-close" class="btn-secondary">Close</button>
+                    </div>
+                </header>
+                <nav class="dev-tabs" role="tablist">
+                    <button type="button" class="dev-tab active" data-tab="weather">Weather</button>
+                    <button type="button" class="dev-tab" data-tab="environment">Environment</button>
+                    <button type="button" class="dev-tab" data-tab="boats">Boats</button>
+                    <button type="button" class="dev-tab" data-tab="sticks">Sticks</button>
+                </nav>
+                <div id="dev-panel-body" class="dev-panel-body"></div>
             </div>
         </div>
     </div>

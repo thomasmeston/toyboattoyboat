@@ -9,6 +9,7 @@ import { createCenterFountain, updateCenterFountain } from './FountainCenter.js'
 import { BackgroundMusic } from './BackgroundMusic.js';
 import { AmbientBeds } from './AmbientBeds.js';
 import { startMenuPreviews } from './MenuPreviews.js';
+import { DevMode } from './DevMode.js';
 
 const INNER_PATH_RADIUS = 104.5;
 const FOUNTAIN_RADIUS = 100;
@@ -23,6 +24,7 @@ export class Game {
     this._cameraModes = ['follow', 'followBoat', 'overview'];
     this.playMode = 'solo'; // 'solo' | 'multiplayer'
     this.menuOpen = false;
+    this.devMode = null;
     this.music = new BackgroundMusic();
     this.ambients = new AmbientBeds();
     this._boatBow = new THREE.Vector3();
@@ -201,20 +203,25 @@ export class Game {
 
       this.camera.lookAt(px, lookY, pz);
     } else if (this.activeCameraMode === 'followBoat') {
-      // True stern chase: camera sits aft of the hull, looking over the bow
+      // Stern chase with optional right-drag orbit; yaw eases back to aft when released
       const data = this.localId ? this.boatsData[this.localId] : null;
       const bx = boat ? boat.position.x : Math.cos(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
       const bz = boat ? boat.position.z : Math.sin(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
       const by = boat ? boat.position.y : 0;
 
+      if (!this._orbitDragging) {
+        this.camBoatYawOffset += (0 - this.camBoatYawOffset) * 0.14;
+        if (Math.abs(this.camBoatYawOffset) < 0.002) this.camBoatYawOffset = 0;
+      }
+
       const bow = this.getBoatBowDirection(boat, data);
       const dist = Math.max(9, this.camDistance * 0.4);
       const height = Math.max(3.2, this.camHeight * 0.32);
 
-      // Orbit around stern: rotate bow 180° (+ optional yaw drag), stay behind hull
       const yaw = this.camBoatYawOffset;
       const cosY = Math.cos(yaw);
       const sinY = Math.sin(yaw);
+      // Rotate aft of bow by yaw so right-drag orbits around the hull
       const aftX = -(bow.x * cosY - bow.z * sinY);
       const aftZ = -(bow.x * sinY + bow.z * cosY);
 
@@ -229,8 +236,13 @@ export class Game {
       this.camera.position.z += (targetCamZ - this.camera.position.z) * lerp;
       if (snap) this._snapCameraOnce = false;
 
-      // Look past the bow so the frame reads as sailing from the stern
-      this._boatLook.set(bx + bow.x * 12, by + 1.1, bz + bow.z * 12);
+      // Pivot on the boat while orbiting; bias look down the bow when near stern
+      const sternBlend = Math.max(0, Math.cos(yaw));
+      this._boatLook.set(
+        bx + bow.x * 10 * sternBlend,
+        by + 1.15,
+        bz + bow.z * 10 * sternBlend,
+      );
       this.camera.lookAt(this._boatLook);
     } else {
       // Bird's-eye overview of the whole fountain
@@ -357,6 +369,8 @@ export class Game {
     this._serverUrl = serverUrl;
     console.log('Game server:', serverUrl);
     this.socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+    if (this.devMode) this.devMode.bindSocket(this.socket);
+    else this.devMode = new DevMode(this.socket);
     this.bindSocketHandlers();
   }
 
@@ -476,7 +490,7 @@ export class Game {
       if (this.boatMeshes[data.id]) {
         this.boatsData[data.id] = data.boat;
         this.boatMeshes[data.id].position.set(data.boat.x, 0, data.boat.y);
-        this.boatMeshes[data.id].rotation.y = meshYawFromPhysics(data.boat.angle);
+        this.boatMeshes[data.id].rotation.y = data.boat.angle;
         this.boatMeshes[data.id].scale.set(1, 1, 1);
       }
     });
@@ -824,17 +838,28 @@ export class Game {
     // Escape menu: mute + volume
     this.bindEscapeMenu();
 
-    // 9. Keys: A/D rim walk, Space poke, E lasso, V camera, Esc menu
+    // 9. Keys: A/D rim walk, Space poke, E lasso, V camera, Esc menu, ~ dev mode
     window.addEventListener('keydown', (e) => {
+      // Backquote / ~ toggles Dev Mode from anywhere (including setup screen)
+      if (e.key === '`' || e.key === '~' || e.code === 'Backquote') {
+        e.preventDefault();
+        if (!e.repeat) this.devMode?.toggle();
+        return;
+      }
+
       if (document.getElementById('start-screen').classList.contains('active')) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (this.devMode?.open) {
+          this.devMode.setOpen(false);
+          return;
+        }
         if (!e.repeat) this.setMenuOpen(!this.menuOpen);
         return;
       }
 
-      if (this.menuOpen) return;
+      if (this.menuOpen || this.devMode?.open) return;
       if (e.target.matches('input, textarea, select')) return;
 
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
@@ -860,7 +885,7 @@ export class Game {
     window.addEventListener('pointerdown', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
       if (this.menuOpen) return;
-      if (e.target.closest('#hud') || e.target.closest('#sink-screen') || e.target.closest('#start-screen') || e.target.closest('#escape-menu')) return;
+      if (e.target.closest('#hud') || e.target.closest('#sink-screen') || e.target.closest('#start-screen') || e.target.closest('#escape-menu') || e.target.closest('#dev-panel')) return;
 
       if (e.button === 2 || e.altKey) {
         this._orbitDragging = true;
@@ -965,6 +990,46 @@ export class Game {
     document.getElementById('btn-resume').addEventListener('click', () => {
       this.setMenuOpen(false);
     });
+
+    document.getElementById('btn-restart')?.addEventListener('click', () => {
+      this.restartGame();
+    });
+  }
+
+  /** Leave the session and return to the setup / Set Sail screen. */
+  restartGame() {
+    this.setMenuOpen(false);
+    document.getElementById('sink-screen')?.classList.remove('active');
+    document.getElementById('hud')?.classList.remove('active');
+    document.getElementById('start-screen')?.classList.add('active');
+
+    this.keys.left = false;
+    this.keys.right = false;
+    this._orbitDragging = false;
+
+    this.socket?.emit('leaveGame');
+
+    // Clear everyone from this client's scene; rejoining will re-sync
+    const ids = new Set([
+      ...Object.keys(this.playerState),
+      ...Object.keys(this.boatMeshes),
+      ...Object.keys(this.avatarMeshes),
+    ]);
+    for (const id of ids) {
+      this.cleanPlayerVisuals(id);
+      delete this.playerState[id];
+      delete this.boatsData[id];
+    }
+
+    this.updateScoreHUD(0, 0);
+    const dmgBar = document.getElementById('damage-bar');
+    if (dmgBar) {
+      dmgBar.style.width = '100%';
+      dmgBar.style.background = '';
+    }
+
+    this._menuPreviews?.stop();
+    this._menuPreviews = startMenuPreviews();
   }
 
   setMenuOpen(open) {
@@ -1022,8 +1087,8 @@ export class Game {
     const arrow = document.getElementById('wind-vane-arrow');
     const speed = document.getElementById('wind-speed');
     if (arrow && speed) {
-      // Translate wind angle to degrees for rotation (compensating for isometric look)
-      const degrees = (this.wind.angle * 180) / Math.PI;
+      // CSS rotate is clockwise; physics angle is CCW — negate so the vane matches the breeze
+      const degrees = (-this.wind.angle * 180) / Math.PI;
       arrow.style.transform = `rotate(${degrees}deg)`;
       speed.textContent = `${this.wind.speed.toFixed(1)} kn`;
     }

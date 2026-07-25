@@ -29,8 +29,21 @@ const INNER_PATH_RADIUS = 104.5; // Path where children walk (just outside wider
 // Visual centerpiece ~radius 12–13; add margin so boat bows (length up to ~7) don't clip stone
 const CENTER_FOUNTAIN_RADIUS = 20;
 const POKE_RANGE = FOUNTAIN_RADIUS; // half the fountain diameter
-const PUSH_FORCE = 15;
-const POKE_TURN = 0.22; // how strongly off-center hits yaw the boat
+/** Live-tunable physics (Dev Mode ~). Mutated at runtime; defaults restored via reset. */
+const TUNABLES = {
+  sailAccel: 0.0007,
+  leeway: 0.00025,
+  pokeImpulse: 0.62,
+  pokeYawKick: 0.2,
+  angularDrag: 0.88,
+  maxOmega: 0.12,
+  pokeYawHold: 0.9,
+  weathercockMaxStep: 0.03,
+  windAuto: true,
+  windChangeMin: 10,
+  windChangeMax: 25,
+};
+const TUNABLES_DEFAULTS = JSON.parse(JSON.stringify(TUNABLES));
 const LASSO_RANGE = FOUNTAIN_RADIUS;
 const LASSO_PULL = 22; // pull strength toward the sailor while reeling
 const LASSO_DURATION = 0.9; // seconds of active reel
@@ -109,6 +122,113 @@ function getBoatStats(boat) {
 function getStickStats(boat) {
   const type = boat?.customization?.stickType || 'wooden';
   return STICK_STATS[type] || STICK_STATS.wooden;
+}
+
+const BOAT_STATS_DEFAULTS = JSON.parse(JSON.stringify(BOAT_STATS));
+const STICK_STATS_DEFAULTS = JSON.parse(JSON.stringify(STICK_STATS));
+
+function clampNum(v, min, max, fallback) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function getDevSettings() {
+  return {
+    weather: {
+      angle: wind.angle,
+      speed: wind.speed,
+      autoChange: TUNABLES.windAuto,
+      changeMinSec: TUNABLES.windChangeMin,
+      changeMaxSec: TUNABLES.windChangeMax,
+      sailAccel: TUNABLES.sailAccel,
+      leeway: TUNABLES.leeway,
+    },
+    environment: {
+      pokeImpulse: TUNABLES.pokeImpulse,
+      pokeYawKick: TUNABLES.pokeYawKick,
+      angularDrag: TUNABLES.angularDrag,
+      maxOmega: TUNABLES.maxOmega,
+      pokeYawHold: TUNABLES.pokeYawHold,
+      weathercockMaxStep: TUNABLES.weathercockMaxStep,
+    },
+    boats: JSON.parse(JSON.stringify(BOAT_STATS)),
+    sticks: JSON.parse(JSON.stringify(STICK_STATS)),
+  };
+}
+
+function applyDevSettings(data = {}) {
+  if (data.weather && typeof data.weather === 'object') {
+    const w = data.weather;
+    if (w.angle != null) {
+      wind.angle = clampNum(w.angle, -Math.PI * 2, Math.PI * 2, wind.angle);
+      wind.targetAngle = wind.angle;
+    }
+    if (w.speed != null) {
+      wind.speed = clampNum(w.speed, 0, 30, wind.speed);
+      wind.targetSpeed = wind.speed;
+    }
+    if (typeof w.autoChange === 'boolean') TUNABLES.windAuto = w.autoChange;
+    if (w.changeMinSec != null) TUNABLES.windChangeMin = clampNum(w.changeMinSec, 1, 120, TUNABLES.windChangeMin);
+    if (w.changeMaxSec != null) TUNABLES.windChangeMax = clampNum(w.changeMaxSec, 1, 180, TUNABLES.windChangeMax);
+    if (TUNABLES.windChangeMax < TUNABLES.windChangeMin) {
+      TUNABLES.windChangeMax = TUNABLES.windChangeMin;
+    }
+    if (w.sailAccel != null) TUNABLES.sailAccel = clampNum(w.sailAccel, 0, 0.05, TUNABLES.sailAccel);
+    if (w.leeway != null) TUNABLES.leeway = clampNum(w.leeway, 0, 0.05, TUNABLES.leeway);
+  }
+
+  if (data.environment && typeof data.environment === 'object') {
+    const e = data.environment;
+    if (e.pokeImpulse != null) TUNABLES.pokeImpulse = clampNum(e.pokeImpulse, 0, 5, TUNABLES.pokeImpulse);
+    if (e.pokeYawKick != null) TUNABLES.pokeYawKick = clampNum(e.pokeYawKick, 0, 2, TUNABLES.pokeYawKick);
+    if (e.angularDrag != null) TUNABLES.angularDrag = clampNum(e.angularDrag, 0.5, 0.999, TUNABLES.angularDrag);
+    if (e.maxOmega != null) TUNABLES.maxOmega = clampNum(e.maxOmega, 0, 1, TUNABLES.maxOmega);
+    if (e.pokeYawHold != null) TUNABLES.pokeYawHold = clampNum(e.pokeYawHold, 0, 5, TUNABLES.pokeYawHold);
+    if (e.weathercockMaxStep != null) {
+      TUNABLES.weathercockMaxStep = clampNum(e.weathercockMaxStep, 0, 0.5, TUNABLES.weathercockMaxStep);
+    }
+  }
+
+  if (data.boats && typeof data.boats === 'object') {
+    for (const type of Object.keys(BOAT_STATS)) {
+      const src = data.boats[type];
+      if (!src || typeof src !== 'object') continue;
+      const dst = BOAT_STATS[type];
+      if (src.maxSpeed != null) dst.maxSpeed = clampNum(src.maxSpeed, 0.2, 12, dst.maxSpeed);
+      if (src.drag != null) dst.drag = clampNum(src.drag, 0.8, 0.999, dst.drag);
+      if (src.windCatch != null) dst.windCatch = clampNum(src.windCatch, 0, 4, dst.windCatch);
+      if (src.mass != null) dst.mass = clampNum(src.mass, 0.2, 5, dst.mass);
+      if (src.durability != null) dst.durability = clampNum(src.durability, 0.2, 5, dst.durability);
+      if (src.turnRate != null) dst.turnRate = clampNum(src.turnRate, 0, 1, dst.turnRate);
+    }
+  }
+
+  if (data.sticks && typeof data.sticks === 'object') {
+    for (const type of Object.keys(STICK_STATS)) {
+      const src = data.sticks[type];
+      if (!src || typeof src !== 'object') continue;
+      const dst = STICK_STATS[type];
+      if (src.power != null) dst.power = clampNum(src.power, 0, 4, dst.power);
+      if (src.accuracy != null) dst.accuracy = clampNum(src.accuracy, 0.2, 3, dst.accuracy);
+      if (src.softness != null) dst.softness = clampNum(src.softness, 0, 3, dst.softness);
+    }
+  }
+
+  return getDevSettings();
+}
+
+function resetDevSettings() {
+  Object.assign(TUNABLES, JSON.parse(JSON.stringify(TUNABLES_DEFAULTS)));
+  for (const type of Object.keys(BOAT_STATS_DEFAULTS)) {
+    Object.assign(BOAT_STATS[type], BOAT_STATS_DEFAULTS[type]);
+  }
+  for (const type of Object.keys(STICK_STATS_DEFAULTS)) {
+    Object.assign(STICK_STATS[type], STICK_STATS_DEFAULTS[type]);
+  }
+  wind.targetAngle = wind.angle;
+  wind.targetSpeed = wind.speed;
+  return getDevSettings();
 }
 
 // Game State
@@ -290,6 +410,8 @@ function createBoatAtAngle(playerAngle, customization, scoreCarry = 0) {
     prevY: spawn.y,
     vx: 0,
     vy: 0,
+    omega: 0, // rad/tick yaw rate
+    pokeYawHold: 0, // suppress weathercock briefly after a poke
     angle: spawn.angle,
     damage: 100,
     isSunk: false,
@@ -447,22 +569,21 @@ function applyBoatPoke(playerId, hitX, hitY) {
     pushY = ry;
   }
 
-  const impulse = (PUSH_FORCE * stick.power) / Math.max(0.5, boatStats.mass);
-  boat.vx += pushX * impulse * DT;
-  boat.vy += pushY * impulse * DT;
+  // Contact impulse along the stick axis: Δv = J/m
+  const mass = Math.max(0.5, boatStats.mass);
+  const J = TUNABLES.pokeImpulse * stick.power;
+  boat.vx += (pushX * J) / mass;
+  boat.vy += (pushY * J) / mass;
 
-  const torque = ox * pushY - oy * pushX;
-  boat.angle += torque * POKE_TURN * stick.softness;
-
-  // Accurate sticks keep more of the aimed heading; soft sticks less snap
-  const centerWeight = (1 - Math.min(1, hitDist / BOAT_HIT_RADIUS)) * accuracy;
-  if (centerWeight > 0.05) {
-    const targetAngle = Math.atan2(pushY, pushX);
-    let angleDiff = targetAngle - boat.angle;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    boat.angle += angleDiff * 0.35 * centerWeight;
-  }
+  // Lever yaw in Y-up XZ: τ_y = r_z F_x - r_x F_z so the poked side moves with the shove.
+  // Softness scales how sharply the hull yaws; hold weathercock so it can’t reverse it.
+  const lever = oy * pushX - ox * pushY;
+  const yawKick = lever * TUNABLES.pokeYawKick * stick.softness;
+  boat.angle += yawKick;
+  boat.omega = (boat.omega || 0) + yawKick * 0.35;
+  if (boat.omega > TUNABLES.maxOmega) boat.omega = TUNABLES.maxOmega;
+  if (boat.omega < -TUNABLES.maxOmega) boat.omega = -TUNABLES.maxOmega;
+  boat.pokeYawHold = TUNABLES.pokeYawHold;
 
   io.emit('boatPoked', { id: playerId, hitX: aimX, hitY: aimY });
   return true;
@@ -577,12 +698,14 @@ function updateComputerPlayers(dt) {
 
 // Update wind state smoothly
 function updateWind(dt) {
-  wind.changeTimer -= dt;
-  if (wind.changeTimer <= 0) {
-    // Set new wind target
-    wind.targetAngle = Math.random() * Math.PI * 2;
-    wind.targetSpeed = 2 + Math.random() * 10; // Speed between 2 and 12
-    wind.changeTimer = 10 + Math.random() * 15; // Change every 10 to 25 seconds
+  if (TUNABLES.windAuto) {
+    wind.changeTimer -= dt;
+    if (wind.changeTimer <= 0) {
+      wind.targetAngle = Math.random() * Math.PI * 2;
+      wind.targetSpeed = 2 + Math.random() * 10; // Speed between 2 and 12
+      const span = Math.max(0, TUNABLES.windChangeMax - TUNABLES.windChangeMin);
+      wind.changeTimer = TUNABLES.windChangeMin + Math.random() * span;
+    }
   }
 
   // Interpolate angle (taking shortest path)
@@ -766,23 +889,26 @@ setInterval(() => {
     // Apply linear drag (higher drag value = more friction retained… we use per-boat drag)
     boat.vx *= stats.drag;
     boat.vy *= stats.drag;
+    boat.omega = (boat.omega || 0) * TUNABLES.angularDrag;
 
     const boatHeadingX = Math.cos(boat.angle);
     const boatHeadingY = Math.sin(boat.angle);
-    const windForceX = Math.cos(wind.angle) * wind.speed;
-    const windForceY = Math.sin(wind.angle) * wind.speed;
-    const windDotHeading = windForceX * boatHeadingX + windForceY * boatHeadingY;
+    // Wind angle = direction the breeze blows toward (matches vane after CSS fix).
+    const windDirX = Math.cos(wind.angle);
+    const windDirY = Math.sin(wind.angle);
+    // +1 running with the wind, 0 beam reach, -1 head-to-wind
+    const pointOfSail = boatHeadingX * windDirX + boatHeadingY * windDirY;
 
-    let windThrust = 0;
-    if (windDotHeading > -wind.speed * 0.4) {
-      windThrust = (windDotHeading + wind.speed * 0.4) * 0.05;
-    } else {
-      windThrust = windDotHeading * 0.02;
-    }
-    windThrust *= stats.windCatch;
+    // Faint sail drive along the bow — subtle downwind bias, barely a brake in irons.
+    const drive = Math.max(-0.15, 0.25 + 0.75 * pointOfSail);
+    const sailAccel = wind.speed * TUNABLES.sailAccel * drive * stats.windCatch;
+    boat.vx += boatHeadingX * sailAccel;
+    boat.vy += boatHeadingY * sailAccel;
 
-    boat.vx += boatHeadingX * windThrust * DT;
-    boat.vy += boatHeadingY * windThrust * DT;
+    // Soft leeway so the breeze is noticeable over time, not a shove
+    const leeway = wind.speed * TUNABLES.leeway * stats.windCatch;
+    boat.vx += windDirX * leeway;
+    boat.vy += windDirY * leeway;
     clampBoatSpeed(boat);
 
     boat.prevX = boat.x;
@@ -790,13 +916,27 @@ setInterval(() => {
     boat.x += boat.vx;
     boat.y += boat.vy;
 
+    // Residual poke spin
+    boat.angle += boat.omega || 0;
+
+    // Weathercock toward velocity — off after poke; weak on sideslip so shoves don’t snap heading
+    if (boat.pokeYawHold > 0) {
+      boat.pokeYawHold = Math.max(0, boat.pokeYawHold - DT);
+    }
     const currentSpeedSq = boat.vx * boat.vx + boat.vy * boat.vy;
-    if (currentSpeedSq > 0.01) {
+    const hold = boat.pokeYawHold || 0;
+    if (hold <= 0 && currentSpeedSq > 0.01) {
       const targetAngle = Math.atan2(boat.vy, boat.vx);
       let angleDiff = targetAngle - boat.angle;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-      boat.angle += angleDiff * stats.turnRate;
+      // Prefer tracking when already aligned; still ease into wind drift so direction matters
+      const align = Math.max(0, Math.cos(angleDiff));
+      const weathercock = stats.turnRate * (0.28 + 0.72 * align);
+      let step = angleDiff * weathercock;
+      if (step > TUNABLES.weathercockMaxStep) step = TUNABLES.weathercockMaxStep;
+      if (step < -TUNABLES.weathercockMaxStep) step = -TUNABLES.weathercockMaxStep;
+      boat.angle += step;
     }
 
     active.push({ id, boat });
@@ -950,6 +1090,8 @@ io.on('connection', (socket) => {
       player.boat.y = spawn.y;
       player.boat.vx = 0;
       player.boat.vy = 0;
+      player.boat.omega = 0;
+      player.boat.pokeYawHold = 0;
       player.boat.angle = spawn.angle;
       player.boat.damage = 100;
       player.boat.isSunk = false;
@@ -963,6 +1105,34 @@ io.on('connection', (socket) => {
         boat: player.boat
       });
     }
+  });
+
+  // Client returning to the setup menu (restart / leave session)
+  socket.on('leaveGame', () => {
+    const player = players[socket.id];
+    if (!player || !player.isPlaying) return;
+    const wasHuman = !player.isBot;
+    player.isPlaying = false;
+    player.boat = null;
+    io.emit('playerLeft', { id: socket.id });
+    if (wasHuman && !hasHumanPlayers()) {
+      clearComputerPlayers();
+    }
+  });
+
+  // Dev Mode (~): live weather / env / boat / stick tweaks
+  socket.on('devGetSettings', () => {
+    socket.emit('devSettings', getDevSettings());
+  });
+
+  socket.on('devSetSettings', (data = {}) => {
+    const next = applyDevSettings(data);
+    io.emit('devSettings', next);
+  });
+
+  socket.on('devResetSettings', () => {
+    const next = resetDevSettings();
+    io.emit('devSettings', next);
   });
 
   // Client disconnecting
