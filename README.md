@@ -2,7 +2,7 @@
 
 Casual multiplayer toy sailboat game. Move your boat around fountains to pass through obstacles and gain points.
 
-Built as an npm workspaces monorepo: **Vite + Three.js** client and **Express + Socket.IO** server.
+Built as an npm workspaces monorepo: **Vite + Three.js** client and **Express + Socket.IO** server. Shared fountain simulation lives in `shared/fountainSim.js` (used by the live server and by offline Solo on GitHub Pages).
 
 ## Requirements
 
@@ -71,20 +71,23 @@ toyboattoyboat/
 ├── client/          # Vite + Three.js frontend
 │   └── src/
 │       ├── Game.js
+│       ├── SoloSocket.js   # offline Solo shim for Pages
 │       ├── DevMode.js
-│       ├── BoatModels.js
 │       └── …
-├── server/          # Express + Socket.IO backend
+├── server/          # Express + Socket.IO bridge
 │   └── server.js
-├── PLAN.md          # Design notes / vision
-└── package.json     # Workspaces root
+├── shared/
+│   └── fountainSim.js     # shared physics / bots / scoring
+├── PLAN.md
+└── package.json
 ```
 
 ## Multiplayer & deploy notes
 
-- **Solo (local):** `npm run dev` is enough.
-- **Multiplayer over the internet:** run the server where others can reach it (or via a Cloudflare Tunnel), then paste that Socket.IO URL in the multiplayer setup when not on localhost.
-- GitHub Pages can host the built client; the game server still needs a reachable host for real-time play.
+- **Solo (local):** `npm run dev` — uses the Socket.IO server with park bots.
+- **Solo (GitHub Pages):** runs fully offline in the browser (same sim + bots). No tunnel required.
+- **Multiplayer:** run the server where others can reach it (or via a Cloudflare Tunnel), then paste that Socket.IO URL in Multiplayer setup (or `?server=`).
+- GitHub Pages hosts the client only; multiplayer still needs a reachable Socket.IO host.
 
 ## License
 

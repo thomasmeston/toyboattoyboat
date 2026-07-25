@@ -10,6 +10,7 @@ import { BackgroundMusic } from './BackgroundMusic.js';
 import { AmbientBeds } from './AmbientBeds.js';
 import { startMenuPreviews } from './MenuPreviews.js';
 import { DevMode } from './DevMode.js';
+import { SoloSocket } from './SoloSocket.js';
 
 const INNER_PATH_RADIUS = 104.5;
 const FOUNTAIN_RADIUS = 100;
@@ -316,6 +317,10 @@ export class Game {
     return this.playMode === 'multiplayer' ? 'multiplayer' : 'solo';
   }
 
+  usesOfflineSolo() {
+    return this.getPlayMode() === 'solo' && !this.isLocalHost();
+  }
+
   setPlayMode(mode) {
     this.playMode = mode === 'multiplayer' ? 'multiplayer' : 'solo';
     try {
@@ -336,10 +341,11 @@ export class Game {
   resolveServerUrl() {
     const isLocal = this.isLocalHost();
 
-    // Solo always prefers the local Socket.IO server
+    if (this.usesOfflineSolo()) return null;
+
+    // Local solo uses the shared simulation through the Socket.IO dev server.
     if (this.getPlayMode() === 'solo') {
-      if (isLocal) return 'http://localhost:3005';
-      // On Pages/itch, solo still needs a reachable host — use tunnel if provided
+      return 'http://localhost:3005';
     }
 
     try {
@@ -361,8 +367,19 @@ export class Game {
   }
 
   initNetwork() {
+    // Static hosts cannot run Socket.IO. Offline solo connects when Set Sail is pressed.
+    if (this.usesOfflineSolo()) return;
     const serverUrl = this.resolveServerUrl();
     this.connectSocket(serverUrl);
+  }
+
+  connectSoloSocket() {
+    this._serverUrl = 'offline-solo';
+    this.socket = new SoloSocket();
+    this.localId = this.socket.id;
+    if (this.devMode) this.devMode.bindSocket(this.socket);
+    else this.devMode = new DevMode(this.socket);
+    this.bindSocketHandlers();
   }
 
   connectSocket(serverUrl) {
@@ -771,23 +788,15 @@ export class Game {
             return;
           }
         }
-      } else if (!this.isLocalHost()) {
-        // Solo on GitHub Pages still needs a reachable Socket.IO host
-        const remote = typedServer
-          || localStorage.getItem('toyboattoyboat-server-url')
-          || import.meta.env.VITE_SERVER_URL
-          || new URLSearchParams(window.location.search).get('server');
-        if (!remote) {
-          alert('Solo on this site still needs your game server.\nChoose Multiplayer and paste your Cloudflare Tunnel URL, or play Solo at http://localhost:5181 with npm run dev.');
-          return;
-        }
       }
 
-      const targetUrl = this.resolveServerUrl();
+      const offlineSolo = this.usesOfflineSolo();
+      const targetUrl = offlineSolo ? 'offline-solo' : this.resolveServerUrl();
       if (!this.socket?.connected || this._serverUrl !== targetUrl) {
         this.socket?.removeAllListeners();
         this.socket?.disconnect();
-        this.connectSocket(targetUrl);
+        if (offlineSolo) this.connectSoloSocket();
+        else this.connectSocket(targetUrl);
         await new Promise((resolve) => {
           if (this.socket.connected) {
             resolve();
@@ -802,7 +811,9 @@ export class Game {
       }
 
       if (!this.socket?.connected) {
-        alert(`Could not connect to game server:\n${targetUrl}\n\nIs npm run dev running? Is the Cloudflare tunnel still open?`);
+        if (!offlineSolo) {
+          alert(`Could not connect to game server:\n${targetUrl}\n\nIs npm run dev running? Is the Cloudflare tunnel still open?`);
+        }
         return;
       }
 
