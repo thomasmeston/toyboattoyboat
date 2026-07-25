@@ -1,6 +1,6 @@
 # ToyBoatToyBoat
 
-Casual multiplayer paper-sailboat game. Walk the rim of a park fountain, poke your boat with a stick, catch the wind, and sail through scoring rings.
+Casual multiplayer toy sailboat game. Move your boat around fountains to pass through obstacles and gain points.
 
 Built as an npm workspaces monorepo: **Vite + Three.js** client and **Express + Socket.IO** server.
 

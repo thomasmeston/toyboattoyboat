@@ -1,7 +1,7 @@
 {
   "name": "toyboattoyboat-monorepo",
   "version": "1.0.0",
-  "description": "Casual multiplayer paper sailboat fountain game",
+  "description": "Casual multiplayer toy sailboat game. Move your boat around fountains to pass through obstacles and gain points.",
   "private": true,
   "workspaces": [
     "client",

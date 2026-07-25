@@ -2,7 +2,7 @@
 
 ## Vision
 
-**ToyBoatToyBoat** is a casual toy-boat sailing game. Players walk the rim of small bodies of water with long pushsticks, guiding paper sailboats through obstacles and completing light missions. The tone is playful and tactile — like a sunny afternoon at a park fountain, not a hardcore racing sim.
+**ToyBoatToyBoat** is a casual multiplayer toy sailboat game. Move your boat around fountains to pass through obstacles and gain points. Players walk the rim with long pushsticks, guiding toy sailboats through the water. The tone is playful and tactile — like a sunny afternoon at a park fountain, not a hardcore racing sim.
 
 Each session starts with personalization: pick your boat, your stick, and your colors and flag. Then sail, poke, dodge, and explore.
 
@@ -48,7 +48,7 @@ Maps are self-contained **levels** — each a small body of water with its own l
 
 ### Map 1 — Parisian Park Fountain *(starting map, in progress)*
 
-A large circular fountain in a Parisian park. Players walk a cobblestone path around the rim while paper boats sail the basin.
+A large circular fountain in a Parisian park. Players walk a cobblestone path around the rim while toy sailboats sail the basin.
 
 - **Water:** Circular fountain with wind-affected sailing
 - **Terrain:** Park grass, trees, stone rim, cobble path
@@ -99,7 +99,7 @@ Social feel matters: seeing other boats bob, watching someone else's stick poke,
 
 ## Art & Tone
 
-- **Visual style:** Papercraft / pastel low-poly — warm, matte, handcrafted (think sunny park, folded paper boats, cardboard trees)
+- **Visual style:** Pastel low-poly / handcrafted — warm, matte (think sunny park, toy sailboats, stylized scenery)
 - **Camera:** Isometric follow cam with optional fixed overview
 - **Audio *(planned)*:** Gentle water, wind, soft park ambience, satisfying poke sounds
 - **Mood:** Cozy, low-stakes, good for short sessions
@@ -176,4 +176,4 @@ These can be decided as M1 playtesting clarifies who the primary audience is.
 
 ## One-Line Pitch
 
-*Pick your paper boat and stick, then sail a sunny fountain with friends — poke past obstacles, catch the wind, and finish goofy missions across ponds, lakes, and mini-golf water hazards.*
+*Pick your toy sailboat and stick, then sail a sunny fountain with friends — poke past obstacles, catch the wind, and finish goofy missions across ponds, lakes, and mini-golf water hazards.*
