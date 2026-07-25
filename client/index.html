@@ -66,6 +66,24 @@
                     </div>
                 </div>
 
+                <div class="setup-section map-section">
+                    <h3>Map</h3>
+                    <div class="map-options" id="start-map-options" role="group" aria-label="Map">
+                        <button type="button" class="map-option-btn active" data-map-id="paris_fountain">
+                            Paris Fountain
+                            <small>Circular park basin</small>
+                        </button>
+                        <button type="button" class="map-option-btn" data-map-id="conservatory_water">
+                            Conservatory Water
+                            <small>Central Park model boat pond</small>
+                        </button>
+                        <button type="button" class="map-option-btn" data-map-id="echo_park_lake">
+                            Echo Park Lake
+                            <small>LA swan-boat lake</small>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="setup-grid">
                     <div class="setup-section">
                         <h3>Sailor</h3>
@@ -85,14 +103,17 @@
                             <div class="option-card active" data-boat="standard" title="Balanced speed &amp; hull">
                                 <div class="option-preview"></div>
                                 <span>Sailboat</span>
+                                <small class="option-flavor">Steady poke, honest wind.</small>
                             </div>
                             <div class="option-card" data-boat="cutter" title="Fast &amp; windy · fragile">
                                 <div class="option-preview"></div>
                                 <span>Sloop</span>
+                                <small class="option-flavor">Loves a breeze. Hates a rock.</small>
                             </div>
                             <div class="option-card" data-boat="pirate" title="Heavy tank · slow turn">
                                 <div class="option-preview"></div>
                                 <span>Ship</span>
+                                <small class="option-flavor">Hard to sink. Harder to turn.</small>
                             </div>
                         </div>
                     </div>
@@ -151,31 +172,33 @@
 
         <!-- HUD (Heads Up Display) -->
         <div id="hud" class="hud-container">
-            <!-- Top bar -->
+            <!-- Top bar: condition+score left, wind right -->
             <div class="hud-row hud-top">
-                <!-- Sinking Damage Bar -->
-                <div class="glass-bar-container">
-                    <span class="bar-label">Boat Condition</span>
-                    <div class="progress-bar-bg">
-                        <div id="damage-bar" class="progress-bar-fill" style="width: 100%;"></div>
+                <div class="hud-top-left">
+                    <div class="glass-bar-container">
+                        <span class="bar-label">Boat Condition</span>
+                        <div class="progress-bar-bg">
+                            <div id="damage-bar" class="progress-bar-fill" style="width: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="score-panel glass-card-mini">
+                        <span class="score-label">Score</span>
+                        <span id="player-score" class="score-value">0</span>
+                        <span id="ring-streak" class="score-streak"></span>
+                        <span id="score-toast" class="score-toast" aria-live="polite"></span>
                     </div>
                 </div>
 
-                <div class="score-panel glass-card-mini">
-                    <span class="score-label">Score</span>
-                    <span id="player-score" class="score-value">0</span>
-                    <span id="ring-streak" class="score-streak"></span>
-                    <span id="score-toast" class="score-toast" aria-live="polite"></span>
-                </div>
-
-                <!-- Wind Vane -->
-                <div class="wind-vane-container glass-card-mini">
-                    <div class="wind-vane-arrow-wrapper">
-                        <div id="wind-vane-arrow">➔</div>
-                    </div>
-                    <div class="wind-info">
-                        <span class="wind-label">WIND</span>
-                        <span id="wind-speed" class="wind-value">5.0 kn</span>
+                <div class="hud-top-right">
+                    <div class="wind-vane-container glass-card-mini">
+                        <div class="wind-vane-arrow-wrapper">
+                            <div id="wind-vane-arrow">➔</div>
+                        </div>
+                        <div class="wind-info">
+                            <span id="wind-phase" class="wind-phase">Breeze</span>
+                            <span id="wind-speed" class="wind-value">5.0 kn</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -183,9 +206,11 @@
             <!-- Bottom bar controls -->
             <div class="hud-row hud-bottom">
                 <div class="controls-hint glass-card-mini">
-                    <span>Left: <strong>A</strong></span>
+                    <span>Left: <strong>A</strong>/<strong>←</strong></span>
                     <span class="divider">|</span>
-                    <span>Right: <strong>D</strong></span>
+                    <span>Right: <strong>D</strong>/<strong>→</strong></span>
+                    <span class="divider">|</span>
+                    <span>Steer boat: <strong>A</strong>/<strong>D</strong> in Follow Boat</span>
                     <span class="divider">|</span>
                     <span>Push: <strong>Click boat</strong> (or <strong>Space</strong> while aimed)</span>
                     <span class="divider">|</span>
@@ -249,6 +274,28 @@
                     </div>
                 </div>
 
+                <div class="escape-map-panel">
+                    <span class="course-label">Map</span>
+                    <select id="escape-map-select" aria-label="Map">
+                        <option value="paris_fountain">Paris Fountain</option>
+                        <option value="conservatory_water">Conservatory Water</option>
+                        <option value="echo_park_lake">Echo Park Lake</option>
+                    </select>
+                    <button type="button" id="btn-change-map" class="btn-secondary course-btn">Switch map</button>
+                </div>
+
+                <div class="course-panel escape-course-panel" id="course-panel">
+                    <span class="course-label">Ring course</span>
+                    <select id="course-select" aria-label="Ring course">
+                        <option value="">Free play</option>
+                    </select>
+                    <div class="course-actions">
+                        <button type="button" id="btn-course-start" class="btn-secondary course-btn">Start</button>
+                        <button type="button" id="btn-course-abandon" class="btn-secondary course-btn" hidden>Abandon</button>
+                    </div>
+                    <span id="course-status" class="course-status"></span>
+                </div>
+
                 <div class="action-bar escape-menu-actions">
                     <button id="btn-resume" class="btn-primary">Resume</button>
                     <button id="btn-restart" class="btn-secondary">Restart Game</button>
@@ -274,6 +321,7 @@
                     <button type="button" class="dev-tab" data-tab="environment">Environment</button>
                     <button type="button" class="dev-tab" data-tab="boats">Boats</button>
                     <button type="button" class="dev-tab" data-tab="sticks">Sticks</button>
+                    <button type="button" class="dev-tab" data-tab="sfx">SFX</button>
                 </nav>
                 <div id="dev-panel-body" class="dev-panel-body"></div>
             </div>

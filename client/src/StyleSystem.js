@@ -76,7 +76,25 @@ export const PALETTE = {
   buildingCream: 0xe6dfd2, // distant Haussmann limestone
   buildingStone: 0xd4cdc0,
   buildingRoof: 0xb89b8a, // soft zinc / terracotta roof
-  buildingAccent: 0xc9c2b4
+  buildingAccent: 0xc9c2b4,
+  // Conservatory Water / NYC
+  waterNyc: 0x9ec4d8,
+  graniteRim: 0x6a7a88,
+  brickBoathouse: 0xb85c4a,
+  copperRoof: 0x5a8a72,
+  benchWood: 0xb8956a,
+  // Echo Park / LA
+  waterLa: 0x7eb89a,
+  dockWood: 0xa07850,
+  lotusPink: 0xe8a0b0,
+  palmGreen: 0x6a9a5a,
+  swanWhite: 0xf4f0ea,
+};
+
+export const WATER_COLORS = {
+  paris: PALETTE.water,
+  nyc: PALETTE.waterNyc,
+  la: PALETTE.waterLa,
 };
 
 // Create a ThreeJS material with papercraft characteristics
@@ -92,10 +110,10 @@ export function createPaperMaterial(colorCode) {
   });
 }
 
-// Flat fountain basin water
-export function createWaterMaterial() {
+// Flat fountain / lake water
+export function createWaterMaterial(color = PALETTE.water) {
   return new THREE.MeshStandardMaterial({
-    color: PALETTE.water,
+    color,
     roughness: 0.28,
     metalness: 0.04,
     transparent: true,

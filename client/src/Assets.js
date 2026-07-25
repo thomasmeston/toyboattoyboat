@@ -388,6 +388,56 @@ export function createPushstick(stickType, color) {
 }
 
 // 6. Parisian Park Scenery (Static Fountain, Rim & Path)
+/**
+ * Papercraft park bench sized for ~5.5-unit child avatars.
+ * Seat faces local +Z; use faceBenchTowardFountain() after placing.
+ */
+export function createParkBench() {
+  const g = new THREE.Group();
+  g.name = 'ParkBench';
+  const wood = createPaperMaterial(PALETTE.benchWood);
+  const iron = createPaperMaterial(0x5a5a5a);
+
+  // Kid scale: sailors are TARGET_HEIGHT 5.5 — seat ~knee height, 2-kid width
+  const seatW = 4.6;
+  const seatD = 1.25;
+  const seatY = 1.25;
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(seatW, 0.22, seatD), wood);
+  seat.position.y = seatY;
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  g.add(seat);
+
+  const back = new THREE.Mesh(new THREE.BoxGeometry(seatW, 1.15, 0.18), wood);
+  back.position.set(0, seatY + 0.7, -seatD * 0.42);
+  back.castShadow = true;
+  g.add(back);
+
+  for (const x of [-seatW * 0.38, seatW * 0.38]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, seatY, seatD * 0.85), iron);
+    leg.position.set(x, seatY * 0.5, 0);
+    leg.castShadow = true;
+    g.add(leg);
+  }
+
+  // Armrests — read at hand height for a standing child
+  for (const x of [-seatW * 0.48, seatW * 0.48]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, seatD * 0.9), wood);
+    arm.position.set(x, seatY + 0.45, 0.05);
+    arm.castShadow = true;
+    g.add(arm);
+  }
+
+  return g;
+}
+
+/** Seat faces the fountain (local +Z → basin center). */
+export function faceBenchTowardFountain(bench) {
+  const { y } = bench.position;
+  // lookAt aims local −Z at the target; backrest toward center → seat faces the water
+  bench.lookAt(0, y, 0);
+}
+
 export function createParkScenery(fountainRadius) {
   const group = new THREE.Group();
 
@@ -425,17 +475,47 @@ export function createParkScenery(fountainRadius) {
   grass.receiveShadow = true;
   group.add(grass);
 
-  // Add stylized papercraft trees around the park
-  const treeCount = 18;
+  // Park benches on the outer edge of the walk path, facing the basin
+  // Path runs rimOuter → fountainRadius+16.5; walk radius ~104.5 — place just outside walk line
+  const benchCount = 7;
+  const benchDist = fountainRadius + 12.5;
+  for (let i = 0; i < benchCount; i++) {
+    const angle = (i / benchCount) * Math.PI * 2 + 0.08;
+    const bench = createParkBench();
+    bench.position.set(
+      Math.cos(angle) * benchDist,
+      0,
+      Math.sin(angle) * benchDist,
+    );
+    faceBenchTowardFountain(bench);
+    group.add(bench);
+  }
+
+  // Park trees — larger than the ~5.5-unit sailors, mixed silhouettes
+  const treeCount = 26;
   for (let i = 0; i < treeCount; i++) {
-    const angle = (i / treeCount) * Math.PI * 2 + Math.random() * 0.2;
-    const distance = fountainRadius + 28 + Math.random() * 20;
-    const tree = createPaperTree();
+    const angle = (i / treeCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const distance = fountainRadius + 34 + Math.random() * 42;
+    const tree = createParkTree();
     tree.position.set(
       Math.cos(angle) * distance,
       0,
-      Math.sin(angle) * distance
+      Math.sin(angle) * distance,
     );
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    group.add(tree);
+  }
+
+  // A few closer landmark trees just outside the path
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + 0.2;
+    const tree = createParkTree({ landmark: true });
+    tree.position.set(
+      Math.cos(angle) * (fountainRadius + 28 + Math.random() * 6),
+      0,
+      Math.sin(angle) * (fountainRadius + 28 + Math.random() * 6),
+    );
+    tree.rotation.y = Math.random() * Math.PI * 2;
     group.add(tree);
   }
 
@@ -545,35 +625,141 @@ function createPaperBuildingBlock({ tall = false } = {}) {
   return group;
 }
 
-// Stylized origami cone tree
-function createPaperTree() {
+/**
+ * Stylized park trees sized for ~5.5-unit child avatars (roughly 2–4× sailor height).
+ * Variants: pine, round canopy, tall poplar, wide umbrella.
+ */
+export function createParkTree({ landmark = false } = {}) {
   const group = new THREE.Group();
+  const variants = ['pine', 'round', 'poplar', 'umbrella'];
+  const variant = variants[Math.floor(Math.random() * variants.length)];
+  const foliageColors = [
+    PALETTE.foliageDark,
+    PALETTE.foliageLight,
+    0x7a9e6e,
+    0x5f8a58,
+    0x8fb37a,
+  ];
+  const trunkColors = [0x8a7050, 0x6e5640, 0x9a8060, 0x5c4636];
+  const foliageColor = foliageColors[Math.floor(Math.random() * foliageColors.length)];
+  const trunkColor = trunkColors[Math.floor(Math.random() * trunkColors.length)];
+  const trunkMat = createPaperMaterial(trunkColor);
+  const foliageMat = createPaperMaterial(foliageColor);
 
-  // Trunk
-  const trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 3.0, 5);
-  const trunkMat = createPaperMaterial(0x8a7050); // clay brown paper trunk
-  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-  trunk.position.y = 1.5;
-  trunk.castShadow = true;
-  group.add(trunk);
+  if (variant === 'pine') {
+    const trunkH = 5.5 + Math.random() * 3.5;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.7, trunkH, 6),
+      trunkMat,
+    );
+    trunk.position.y = trunkH * 0.5;
+    trunk.castShadow = true;
+    group.add(trunk);
 
-  // Foliage: 3 stacked cones (origami style)
-  const foliageColors = [PALETTE.foliageDark, PALETTE.foliageLight];
-  const color = foliageColors[Math.floor(Math.random() * foliageColors.length)];
+    const tiers = 3 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < tiers; i++) {
+      const t = i / Math.max(1, tiers - 1);
+      const r = (3.8 - t * 2.2) * (0.85 + Math.random() * 0.25);
+      const h = (4.2 - t * 0.8) * (0.9 + Math.random() * 0.2);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), foliageMat);
+      cone.position.y = trunkH * 0.55 + i * (h * 0.55);
+      cone.rotation.y = Math.random() * 0.6;
+      cone.castShadow = true;
+      group.add(cone);
+    }
+  } else if (variant === 'round') {
+    const trunkH = 4.2 + Math.random() * 2.4;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 0.75, trunkH, 6),
+      trunkMat,
+    );
+    trunk.position.y = trunkH * 0.5;
+    trunk.castShadow = true;
+    group.add(trunk);
 
-  for (let i = 0; i < 3; i++) {
-    const scale = 1.0 - i * 0.2;
-    const foliageGeo = new THREE.ConeGeometry(2.2 * scale, 3.0 * scale, 5);
-    const foliageMat = createPaperMaterial(color);
-    const cone = new THREE.Mesh(foliageGeo, foliageMat);
-    cone.position.y = 3.5 + i * 1.5 * scale;
-    cone.castShadow = true;
-    group.add(cone);
+    const canopyR = 3.6 + Math.random() * 2.2;
+    const canopy = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(canopyR, 0),
+      foliageMat,
+    );
+    canopy.position.y = trunkH + canopyR * 0.55;
+    canopy.scale.set(1.15, 0.85 + Math.random() * 0.25, 1.1);
+    canopy.castShadow = true;
+    group.add(canopy);
+
+    if (Math.random() > 0.45) {
+      const puff = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(canopyR * 0.55, 0),
+        createPaperMaterial(foliageColors[Math.floor(Math.random() * foliageColors.length)]),
+      );
+      puff.position.set(
+        (Math.random() - 0.5) * canopyR * 0.7,
+        trunkH + canopyR * 0.35,
+        (Math.random() - 0.5) * canopyR * 0.7,
+      );
+      puff.castShadow = true;
+      group.add(puff);
+    }
+  } else if (variant === 'poplar') {
+    const trunkH = 8 + Math.random() * 4;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.55, trunkH, 5),
+      trunkMat,
+    );
+    trunk.position.y = trunkH * 0.5;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    const layers = 4 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < layers; i++) {
+      const t = i / Math.max(1, layers - 1);
+      const r = 1.4 + (1 - t) * 1.1;
+      const h = 3.2 + Math.random() * 0.8;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 5), foliageMat);
+      cone.position.y = trunkH * 0.35 + i * (h * 0.62);
+      cone.castShadow = true;
+      group.add(cone);
+    }
+  } else {
+    // umbrella — broad flat canopy
+    const trunkH = 5 + Math.random() * 2.5;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.65, trunkH, 6),
+      trunkMat,
+    );
+    trunk.position.y = trunkH * 0.5;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    const canopy = new THREE.Mesh(
+      new THREE.SphereGeometry(4.2 + Math.random() * 1.6, 7, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      foliageMat,
+    );
+    canopy.position.y = trunkH + 0.4;
+    canopy.scale.set(1.35, 0.55, 1.35);
+    canopy.castShadow = true;
+    group.add(canopy);
   }
 
-  const randomScale = 0.8 + Math.random() * 0.5;
-  group.scale.set(randomScale, randomScale, randomScale);
+  // Target world height ~11–22 (≈2–4× sailor) so trunks read at park scale
+  const targetH = landmark
+    ? 18 + Math.random() * 6
+    : 12 + Math.random() * 8;
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const s = targetH / Math.max(size.y, 0.01);
+  group.scale.setScalar(s);
+  // Slight non-uniform lean for organic feel
+  group.scale.x *= 0.92 + Math.random() * 0.16;
+  group.scale.z *= 0.92 + Math.random() * 0.16;
   return group;
+}
+
+/** @deprecated use createParkTree */
+function createPaperTree() {
+  return createParkTree();
 }
 
 /** Papercraft miniature island; optional tiny lighthouse. */
@@ -828,4 +1014,69 @@ export async function createObstacleMesh(type, radius, options = {}) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+/**
+ * Papercraft windsock for a miniature island.
+ * Sleeve tip points along local +X. Scene-parented roots should set
+ * sleeve.rotation.y = −windAngle so +X aligns with sim wind (cos θ, sin θ) on XZ.
+ */
+export function createWindSock(islandRadius = 4) {
+  const root = new THREE.Group();
+  root.name = 'WindSock';
+
+  const scale = Math.max(1.2, Math.min(1.8, islandRadius / 3.8));
+  const poleH = 5.2 * scale;
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09 * scale, 0.12 * scale, poleH, 6),
+    createPaperMaterial(0xc4b8a4),
+  );
+  pole.position.y = poleH * 0.5;
+  pole.castShadow = true;
+  root.add(pole);
+
+  const knuckle = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18 * scale, 6, 5),
+    createPaperMaterial(0xb0a090),
+  );
+  knuckle.position.y = poleH;
+  root.add(knuckle);
+
+  // Pivot at top of pole — Game updates this.rotation.y from wind
+  const sleeve = new THREE.Group();
+  sleeve.name = 'WindSockSleeve';
+  sleeve.position.y = poleH;
+  root.add(sleeve);
+
+  const stripes = [0xe85a5a, 0xf7f4ef, 0xe85a5a, 0xf7f4ef];
+  const len = 3.4 * scale;
+  const segments = stripes.length;
+  for (let i = 0; i < segments; i++) {
+    const t0 = i / segments;
+    const t1 = (i + 1) / segments;
+    const r0 = (0.7 - t0 * 0.52) * scale;
+    const r1 = (0.7 - t1 * 0.52) * scale;
+    const segLen = len / segments;
+    const cone = new THREE.Mesh(
+      new THREE.CylinderGeometry(r1, r0, segLen, 8),
+      createPaperMaterial(stripes[i]),
+    );
+    // Default cylinder is +Y; lay along +X (downwind)
+    cone.rotation.z = -Math.PI / 2;
+    cone.position.x = segLen * 0.5 + i * segLen;
+    cone.castShadow = true;
+    sleeve.add(cone);
+  }
+
+  const mouth = new THREE.Mesh(
+    new THREE.TorusGeometry(0.72 * scale, 0.06 * scale, 5, 12),
+    createPaperMaterial(0xd8d0c4),
+  );
+  mouth.rotation.y = Math.PI / 2;
+  mouth.position.x = 0.02;
+  sleeve.add(mouth);
+
+  root.userData.sleeve = sleeve;
+  root.userData.poleHeight = poleH;
+  return root;
 }

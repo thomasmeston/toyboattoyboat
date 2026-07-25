@@ -33,10 +33,14 @@ const sim = createFountainSim({
 
 const clientEvents = [
   'joinGame',
+  'changeMap',
   'movePlayer',
   'pokeBoat',
   'lassoBoat',
+  'steerBoat',
   'respawnBoat',
+  'startCourse',
+  'abandonCourse',
   'leaveGame',
   'devGetSettings',
   'devSetSettings',

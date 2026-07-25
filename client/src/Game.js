@@ -1,20 +1,22 @@
 import * as THREE from 'three';
 import { io } from 'socket.io-client';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { createWaterMaterial, setupLighting } from './StyleSystem.js';
-import { createPushstick, createParkScenery, createObstacleMesh } from './Assets.js';
+import { setupLighting } from './StyleSystem.js';
+import { createPushstick, createObstacleMesh, createWindSock } from './Assets.js';
 import { createAnimatedChildAvatar } from './ChildAvatar.js';
 import { createWoodBoat } from './BoatModels.js';
-import { createCenterFountain, updateCenterFountain } from './FountainCenter.js';
+import { updateCenterFountain } from './FountainCenter.js';
 import { BackgroundMusic } from './BackgroundMusic.js';
 import { AmbientBeds } from './AmbientBeds.js';
+import { Sfx } from './Sfx.js';
 import { startMenuPreviews } from './MenuPreviews.js';
 import { DevMode } from './DevMode.js';
 import { SoloSocket } from './SoloSocket.js';
+import { buildMapWorld, disposeObject3D, updateMapAmbience } from './maps/MapScenery.js';
+import { DEFAULT_MAP_ID, getMap, listMaps, normalizeMapId } from '../../shared/maps.js';
 
-const INNER_PATH_RADIUS = 104.5;
-const FOUNTAIN_RADIUS = 100;
 const WALK_SPEED = 0.006; // rad per frame-unit when holding A/D
+const MAP_STORAGE_KEY = 'tbtb-map';
 
 export class Game {
   constructor() {
@@ -26,8 +28,15 @@ export class Game {
     this.playMode = 'solo'; // 'solo' | 'multiplayer'
     this.menuOpen = false;
     this.devMode = null;
+    this.selectedMapId = this.loadSavedMapId();
+    this.map = getMap(this.selectedMapId);
+    this.mapWorld = null;
+    this.centerFountain = null;
+    this.waterMat = null;
     this.music = new BackgroundMusic();
     this.ambients = new AmbientBeds();
+    this.sfx = new Sfx();
+    this.sfx.setVolume(this.ambients.volume);
     this._boatBow = new THREE.Vector3();
     this._boatLook = new THREE.Vector3();
     this._physFwd = new THREE.Vector3();
@@ -43,6 +52,7 @@ export class Game {
     this._orbitDragging = false;
     this._lastPointerX = 0;
     this.keys = { left: false, right: false };
+    this._steerDir = 0;
     this.raycaster = new THREE.Raycaster();
     this._pointerNdc = new THREE.Vector2();
     this._cursorClient = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.55 };
@@ -71,8 +81,15 @@ export class Game {
     this.avatarControllers = {}; // Animation helpers keyed by socket id
     this.pushstickMeshes = {};
     this.obstacleMeshes = {};
-    this.wind = { angle: 0, speed: 5 };
-    
+    this.windSock = null; // { root, sleeve, island } — Paris island marker
+    this.wind = { angle: 0, speed: 5, phase: 'breeze' };
+    this._lastWindPhase = 'breeze';
+    this.courseCatalog = [];
+    this.activeCourse = null; // { courseId, ringOrder, nextIndex, startedAtMs }
+    this._courseNextRingId = null;
+    this._splashRipples = [];
+    this._scorePopups = []; // floating +points CSS2D labels
+
     // Animation flags
     this.pokeAnimations = {}; // { socketId: timeElapsed }
     this.lassoAnimations = {}; // { socketId: { t, duration } }
@@ -89,13 +106,76 @@ export class Game {
     this.animate();
   }
 
+  loadSavedMapId() {
+    try {
+      return normalizeMapId(localStorage.getItem(MAP_STORAGE_KEY));
+    } catch {
+      return DEFAULT_MAP_ID;
+    }
+  }
+
+  persistMapId(mapId) {
+    this.selectedMapId = normalizeMapId(mapId);
+    try {
+      localStorage.setItem(MAP_STORAGE_KEY, this.selectedMapId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  pathPos(angle) {
+    const rx = this.map?.path?.rx ?? 104.5;
+    const rz = this.map?.path?.rz ?? 104.5;
+    return {
+      x: Math.cos(angle) * rx,
+      z: Math.sin(angle) * rz,
+    };
+  }
+
+  waterSpawnPos(angle, inset = 8) {
+    const rx = (this.map?.water?.rx ?? 100) - inset;
+    const rz = (this.map?.water?.rz ?? 100) - inset;
+    return {
+      x: Math.cos(angle) * rx,
+      z: Math.sin(angle) * rz,
+    };
+  }
+
+  rebuildWorld(mapPayload) {
+    const map = mapPayload?.id ? { ...getMap(mapPayload.id), ...mapPayload } : getMap(this.selectedMapId);
+    this.map = map;
+    this.selectedMapId = map.id;
+
+    if (this.mapWorld) {
+      this.scene.remove(this.mapWorld);
+      disposeObject3D(this.mapWorld);
+      this.mapWorld = null;
+      this.centerFountain = null;
+      this.waterMat = null;
+    }
+
+    const built = buildMapWorld(map);
+    this.mapWorld = built.root;
+    this.waterMat = built.waterMat;
+    this.centerFountain = built.centerFountain;
+    this.scene.add(this.mapWorld);
+
+    const fog = map.fog || { near: 120, far: 320, color: 0xf6f3eb };
+    this.scene.background = new THREE.Color(fog.color);
+    this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
+
+    const subtitle = document.querySelector('.escape-menu-subtitle');
+    if (subtitle) subtitle.textContent = map.subtitle || map.name;
+
+    this.syncMapSelectorUI();
+  }
+
   initThree() {
     const container = document.getElementById('canvas-container');
     
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf6f3eb); // warm cardstock base background
-    // Soft distant haze only — exponential fog was making the flat basin read as a dome
+    this.scene.background = new THREE.Color(0xf6f3eb);
     this.scene.fog = new THREE.Fog(0xf6f3eb, 120, 320);
 
     // Renderer
@@ -116,41 +196,13 @@ export class Game {
     container.appendChild(this.labelRenderer.domElement);
 
     // Camera (Isometric perspective setup)
-    this.camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 1000);
+    this.camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 1200);
     this.updateCameraPosition();
 
     // Lighting
     setupLighting(this.scene);
 
-    // Flat fountain water: short upright cylinder (top face = surface).
-    // Do NOT rotateX — that tipped the cylinder on its side and looked like a dome.
-    this.waterMat = createWaterMaterial();
-    // Recessed pool: water sits inside the stone rim, slightly below the lip
-    const waterRadius = FOUNTAIN_RADIUS - 2.2;
-    const water = new THREE.Mesh(
-      new THREE.CylinderGeometry(waterRadius, waterRadius, 0.1, 64),
-      this.waterMat,
-    );
-    water.receiveShadow = true;
-    water.position.y = 0.02;
-    this.scene.add(water);
-
-    // Darker basin floor for depth under translucent water
-    const basin = new THREE.Mesh(
-      new THREE.CylinderGeometry(waterRadius + 0.3, waterRadius + 0.3, 0.06, 48),
-      new THREE.MeshStandardMaterial({ color: 0x4f87a0, roughness: 0.95, metalness: 0 }),
-    );
-    basin.receiveShadow = true;
-    basin.position.y = -0.08;
-    this.scene.add(basin);
-
-    // Large centerpiece fountain with sprouting water jets
-    this.centerFountain = createCenterFountain();
-    this.scene.add(this.centerFountain);
-
-    // Ground, park trees, rims
-    const scenery = createParkScenery(FOUNTAIN_RADIUS);
-    this.scene.add(scenery);
+    this.rebuildWorld(getMap(this.selectedMapId));
 
     // Handle Resize
     window.addEventListener('resize', () => {
@@ -186,8 +238,9 @@ export class Game {
 
     if (this.activeCameraMode === 'follow') {
       // Orbit pivot = player on the rim; lookAt stays on the child
-      const px = avatar ? avatar.position.x : Math.cos(this.playerAngle) * INNER_PATH_RADIUS;
-      const pz = avatar ? avatar.position.z : Math.sin(this.playerAngle) * INNER_PATH_RADIUS;
+      const rim = this.pathPos(this.playerAngle);
+      const px = avatar ? avatar.position.x : rim.x;
+      const pz = avatar ? avatar.position.z : rim.z;
       const lookY = 2.4;
       const camAngle = this.playerAngle + this.camYawOffset;
 
@@ -206,8 +259,9 @@ export class Game {
     } else if (this.activeCameraMode === 'followBoat') {
       // Stern chase with optional right-drag orbit; yaw eases back to aft when released
       const data = this.localId ? this.boatsData[this.localId] : null;
-      const bx = boat ? boat.position.x : Math.cos(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
-      const bz = boat ? boat.position.z : Math.sin(this.playerAngle) * (FOUNTAIN_RADIUS - 8);
+      const spawn = this.waterSpawnPos(this.playerAngle, 8);
+      const bx = boat ? boat.position.x : spawn.x;
+      const bz = boat ? boat.position.z : spawn.z;
       const by = boat ? boat.position.y : 0;
 
       if (!this._orbitDragging) {
@@ -246,10 +300,13 @@ export class Game {
       );
       this.camera.lookAt(this._boatLook);
     } else {
-      // Bird's-eye overview of the whole fountain
+      // Bird's-eye overview of the whole basin
+      const span = Math.max(this.map?.water?.rx ?? 100, this.map?.water?.rz ?? 100);
+      const overviewY = 140 * (span / 100);
+      const overviewZ = 90 * (span / 100);
       this.camera.position.x += (0 - this.camera.position.x) * 0.06;
-      this.camera.position.y += (140 - this.camera.position.y) * 0.06;
-      this.camera.position.z += (90 - this.camera.position.z) * 0.06;
+      this.camera.position.y += (overviewY - this.camera.position.y) * 0.06;
+      this.camera.position.z += (overviewZ - this.camera.position.z) * 0.06;
       this.camera.lookAt(0, 0, 0);
     }
   }
@@ -292,9 +349,19 @@ export class Game {
     } else if (mode === 'followBoat') {
       this.camBoatYawOffset = 0; // snap to true aft on enter
       this._snapCameraOnce = true;
+      // Rim walk off — A/D only steer the boat
+      this.sfx?.setMoving(false);
+      if (this.localId) this.avatarControllers[this.localId]?.setMoving(false);
+      this._steerDir = (this.keys.left ? 1 : 0) + (this.keys.right ? -1 : 0);
+      this.socket?.emit('steerBoat', { dir: this._steerDir });
+    }
+    if (mode !== 'followBoat' && this._steerDir !== 0) {
+      this._steerDir = 0;
+      this.socket?.emit('steerBoat', { dir: 0 });
     }
     this.ambients?.setMode(mode);
     this.syncCameraButtons();
+    this.updateWindVaneHUD();
   }
 
   cycleCameraMode() {
@@ -406,15 +473,47 @@ export class Game {
         this.scene.remove(this.obstacleMeshes[id]);
       }
       this.obstacleMeshes = {};
+      this.activeCourse = null;
+      this._courseNextRingId = null;
+      this.populateCourseSelect(data.courses || []);
+
+      if (data.map) {
+        const prevId = this.map?.id;
+        this.rebuildWorld(data.map);
+        this.persistMapId(data.map.id);
+        // Map change mid-session: clear player visuals; playerJoined will re-spawn
+        if (data.mapChanged && prevId && prevId !== data.map.id) {
+          const ids = new Set([
+            ...Object.keys(this.playerState),
+            ...Object.keys(this.boatMeshes),
+            ...Object.keys(this.avatarMeshes),
+          ]);
+          for (const id of ids) {
+            this.cleanPlayerVisuals(id);
+            delete this.playerState[id];
+            delete this.boatsData[id];
+          }
+        }
+      }
+
+      this.clearWindSock();
 
       Promise.all(
-        data.obstacles.map(async (obs) => {
+        (data.obstacles || []).map(async (obs) => {
           const mesh = await createObstacleMesh(obs.type, obs.radius, { facing: obs.facing });
           mesh.position.set(obs.x, mesh.position.y, obs.y);
+          mesh.userData.obstacleId = obs.id;
+          mesh.userData.obstacleType = obs.type;
+          mesh.userData.baseScale = mesh.scale.x;
           this.scene.add(mesh);
           this.obstacleMeshes[obs.id] = mesh;
+          return { obs, mesh };
         }),
-      ).catch((err) => console.error('Failed to spawn obstacles:', err));
+      )
+        .then((spawned) => {
+          this.attachParisWindSock(spawned);
+        })
+        .catch((err) => console.error('Failed to spawn obstacles:', err));
     });
 
     s.on('playerJoined', (data) => {
@@ -433,7 +532,13 @@ export class Game {
     });
 
     s.on('stateUpdate', (data) => {
+      const prevPhase = this._lastWindPhase;
       this.wind = data.wind;
+      const phase = data.wind?.phase || 'breeze';
+      if (phase === 'gust' && prevPhase !== 'gust') {
+        this.sfx?.playGust();
+      }
+      this._lastWindPhase = phase;
       this.updateWindVaneHUD();
 
       if (data.avatars) {
@@ -476,14 +581,91 @@ export class Game {
 
     s.on('ringCleared', (data) => {
       this.updateScoreHUD(data.score, data.ringStreak);
+      this.sfx?.playRingScore();
+
+      const gained = (data.points || 0) + (data.bonus || 0) + (data.sharedBonus || 0);
+      let popupText = `+${gained}`;
+      if (data.bonus) popupText = `+${gained}!`;
+      const boat = this.localId ? this.boatsData[this.localId] : null;
+      const ring = data.obstacleId ? this.obstacleMeshes[data.obstacleId] : null;
+      const px = boat?.x ?? ring?.position.x ?? 0;
+      const pz = boat?.y ?? ring?.position.z ?? 0;
+      this.spawnScorePopup(px, pz, popupText);
+
       const toast = document.getElementById('score-toast');
       if (!toast) return;
-      toast.textContent = data.bonus
-        ? `+${data.points}  ·  Streak +${data.bonus}!`
-        : `+${data.points}`;
+      let text = `+${data.points}`;
+      if (data.bonus) text += `  ·  Streak +${data.bonus}!`;
+      if (data.sharedBonus) text += `  ·  Double +${data.sharedBonus}`;
+      toast.textContent = text;
       toast.classList.add('visible');
       clearTimeout(this._scoreToastTimer);
       this._scoreToastTimer = setTimeout(() => toast.classList.remove('visible'), 1400);
+    });
+
+    s.on('sharedRing', (data) => {
+      const toast = document.getElementById('score-toast');
+      if (!toast) return;
+      toast.textContent = `Double clear! +${data.bonus}`;
+      toast.classList.add('visible');
+      clearTimeout(this._scoreToastTimer);
+      this._scoreToastTimer = setTimeout(() => toast.classList.remove('visible'), 1600);
+    });
+
+    s.on('boatSplashed', (data) => {
+      this.sfx?.playSplash(data.strength || 1);
+      this.spawnSplashRipple(data.x, data.y, data.strength || 1);
+    });
+
+    s.on('courseStarted', (data) => {
+      this.activeCourse = {
+        courseId: data.courseId,
+        ringOrder: data.ringOrder,
+        nextIndex: 0,
+        startedAtMs: performance.now(),
+        medalTimes: data.medalTimes,
+      };
+      this._courseNextRingId = data.nextRingId;
+      this.setCourseUiActive(true);
+      this.setCourseStatus(`${data.name} — ring 1/${data.ringOrder.length}`);
+    });
+
+    s.on('courseProgress', (data) => {
+      if (!this.activeCourse) return;
+      this.activeCourse.nextIndex = data.nextIndex;
+      this._courseNextRingId = data.nextRingId;
+      const total = data.ringOrder?.length || this.activeCourse.ringOrder.length;
+      this.setCourseStatus(`Ring ${Math.min(data.nextIndex + 1, total)}/${total}`);
+    });
+
+    s.on('courseFinished', (data) => {
+      this.activeCourse = null;
+      this._courseNextRingId = null;
+      this.setCourseUiActive(false);
+      const medal = data.medal ? data.medal.toUpperCase() : 'FINISH';
+      const secs = (data.timeMs / 1000).toFixed(1);
+      const pb = this.recordCourseBest(data.courseId, data.timeMs);
+      const pbNote = pb?.isNew ? ' · New PB!' : pb?.bestMs != null ? ` · PB ${(pb.bestMs / 1000).toFixed(1)}s` : '';
+      this.setCourseStatus(`${data.name}: ${secs}s — ${medal}${pbNote}`);
+      const toast = document.getElementById('score-toast');
+      if (toast) {
+        toast.textContent = `${data.name} ${secs}s · ${medal}`;
+        toast.classList.add('visible');
+        clearTimeout(this._scoreToastTimer);
+        this._scoreToastTimer = setTimeout(() => toast.classList.remove('visible'), 2200);
+      }
+      this.populateCourseSelect(this.courseCatalog);
+    });
+
+    s.on('courseAbandoned', () => {
+      this.activeCourse = null;
+      this._courseNextRingId = null;
+      this.setCourseUiActive(false);
+      this.setCourseStatus('');
+    });
+
+    s.on('courseError', (data) => {
+      this.setCourseStatus(data.message || 'Course unavailable');
     });
 
     s.on('playerMoved', (data) => {
@@ -496,6 +678,7 @@ export class Game {
     s.on('boatPoked', (data) => {
       this.pokeAnimations[data.id] = 0;
       this.avatarControllers[data.id]?.setPoking();
+      if (data.id === this.localId) this.sfx?.playPoke();
     });
 
     s.on('boatLassoed', (data) => {
@@ -547,8 +730,9 @@ export class Game {
     }
 
     const avatar = controller.group;
-    const px = Math.cos(angle) * INNER_PATH_RADIUS;
-    const pz = Math.sin(angle) * INNER_PATH_RADIUS;
+    const rim = this.pathPos(angle);
+    const px = rim.x;
+    const pz = rim.z;
     avatar.position.set(px, 0, pz);
     avatar.lookAt(0, 0, 0);
     this.scene.add(avatar);
@@ -825,10 +1009,13 @@ export class Game {
 
       this.music.start();
       this.ambients.start();
+      this.sfx.start();
+      this.sfx.setVolume(this.ambients.volume);
       this.ambients.setMode(this.activeCameraMode);
       this.socket.emit('joinGame', {
         ...this.customization,
         playerAngle: this.playerAngle,
+        mapId: this.selectedMapId,
       });
     });
 
@@ -846,8 +1033,9 @@ export class Game {
       document.getElementById('sink-screen').classList.remove('active');
     });
 
-    // Escape menu: mute + volume
+    // Escape menu: mute + volume + map switch
     this.bindEscapeMenu();
+    this.bindMapSelectors();
 
     // 9. Keys: A/D rim walk, Space poke, E lasso, V camera, Esc menu, ~ dev mode
     window.addEventListener('keydown', (e) => {
@@ -873,9 +1061,11 @@ export class Game {
       if (this.menuOpen || this.devMode?.open) return;
       if (e.target.matches('input, textarea, select')) return;
 
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft' || e.key === 'Left') {
+        if (e.key === 'ArrowLeft' || e.key === 'Left') e.preventDefault();
         this.keys.left = true;
-      } else if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+      } else if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight' || e.key === 'Right') {
+        if (e.key === 'ArrowRight' || e.key === 'Right') e.preventDefault();
         this.keys.right = true;
       } else if (e.key === ' ') {
         e.preventDefault();
@@ -888,8 +1078,12 @@ export class Game {
     });
 
     window.addEventListener('keyup', (e) => {
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') this.keys.left = false;
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') this.keys.right = false;
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft' || e.key === 'Left') {
+        this.keys.left = false;
+      }
+      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight' || e.key === 'Right') {
+        this.keys.right = false;
+      }
     });
 
     // 10. Pointer: click = stick push; right-drag / Alt-drag orbits; scroll zooms
@@ -994,7 +1188,9 @@ export class Game {
     });
 
     sfxEl?.addEventListener('input', () => {
-      this.ambients.setVolume(Number(sfxEl.value) / 100);
+      const level = Number(sfxEl.value) / 100;
+      this.ambients.setVolume(level);
+      this.sfx.setVolume(level);
       syncUi();
     });
 
@@ -1005,6 +1201,75 @@ export class Game {
     document.getElementById('btn-restart')?.addEventListener('click', () => {
       this.restartGame();
     });
+
+    document.getElementById('btn-course-start')?.addEventListener('click', () => {
+      const sel = document.getElementById('course-select');
+      const courseId = sel?.value;
+      if (!courseId || !this.socket) return;
+      this.socket.emit('startCourse', { courseId });
+    });
+
+    document.getElementById('btn-course-abandon')?.addEventListener('click', () => {
+      this.socket?.emit('abandonCourse');
+    });
+
+    document.getElementById('btn-change-map')?.addEventListener('click', () => {
+      const sel = document.getElementById('escape-map-select');
+      const mapId = normalizeMapId(sel?.value);
+      if (!this.socket?.connected) return;
+      if (mapId === this.map?.id) {
+        this.setMenuOpen(false);
+        return;
+      }
+      this.persistMapId(mapId);
+      this.socket.emit('changeMap', { mapId });
+      this.setMenuOpen(false);
+      document.getElementById('sink-screen')?.classList.remove('active');
+    });
+  }
+
+  bindMapSelectors() {
+    const startOpts = document.getElementById('start-map-options');
+    startOpts?.querySelectorAll('.map-option-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mapId = normalizeMapId(btn.dataset.mapId);
+        this.persistMapId(mapId);
+        // Preview scenery on the start screen when not in a session
+        const onStart = document.getElementById('start-screen')?.classList.contains('active');
+        if (onStart && !Object.keys(this.playerState).length) {
+          this.rebuildWorld(getMap(mapId));
+        }
+        this.syncMapSelectorUI();
+      });
+    });
+
+    const escapeSel = document.getElementById('escape-map-select');
+    if (escapeSel && !escapeSel.dataset.filled) {
+      escapeSel.innerHTML = '';
+      for (const m of listMaps()) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        escapeSel.appendChild(opt);
+      }
+      escapeSel.dataset.filled = '1';
+    }
+
+    this.syncMapSelectorUI();
+  }
+
+  syncMapSelectorUI() {
+    const id = this.selectedMapId || this.map?.id || DEFAULT_MAP_ID;
+    document.querySelectorAll('#start-map-options .map-option-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mapId === id);
+    });
+    const escapeSel = document.getElementById('escape-map-select');
+    if (escapeSel && escapeSel.value !== id) escapeSel.value = id;
+    const subtitle = document.querySelector('.escape-menu-subtitle');
+    if (subtitle) {
+      const m = getMap(id);
+      subtitle.textContent = m.subtitle || m.name;
+    }
   }
 
   /** Leave the session and return to the setup / Set Sail screen. */
@@ -1016,8 +1281,10 @@ export class Game {
 
     this.keys.left = false;
     this.keys.right = false;
+    this._steerDir = 0;
     this._orbitDragging = false;
 
+    this.socket?.emit('steerBoat', { dir: 0 });
     this.socket?.emit('leaveGame');
 
     // Clear everyone from this client's scene; rejoining will re-sync
@@ -1094,14 +1361,219 @@ export class Game {
     });
   }
 
+  /**
+   * Wind HUD relative to current view:
+   * - Follow Player / Overview: sailor facing the basin
+   * - Follow Boat: boat bow heading
+   * Up on the dial = forward; right = starboard / player's right.
+   */
   updateWindVaneHUD() {
     const arrow = document.getElementById('wind-vane-arrow');
     const speed = document.getElementById('wind-speed');
+    const phaseEl = document.getElementById('wind-phase');
     if (arrow && speed) {
-      // CSS rotate is clockwise; physics angle is CCW — negate so the vane matches the breeze
-      const degrees = (-this.wind.angle * 180) / Math.PI;
+      let facing;
+      if (this.activeCameraMode === 'followBoat') {
+        const boat = this.localId ? this.boatsData[this.localId] : null;
+        facing = Number.isFinite(boat?.angle)
+          ? boat.angle
+          : this.playerAngle + Math.PI;
+      } else {
+        // Avatar faces the basin center (lookAt origin) → facing = rimAngle + π
+        facing = this.playerAngle + Math.PI;
+      }
+      const fwdX = Math.cos(facing);
+      const fwdZ = Math.sin(facing);
+      const rightX = Math.cos(facing + Math.PI / 2);
+      const rightZ = Math.sin(facing + Math.PI / 2);
+      const wx = Math.cos(this.wind.angle || 0);
+      const wz = Math.sin(this.wind.angle || 0);
+      const forwardComp = wx * fwdX + wz * fwdZ;
+      const rightComp = wx * rightX + wz * rightZ;
+      // φ = 0 → wind blows forward (up on dial); φ = π/2 → right
+      const phi = Math.atan2(rightComp, forwardComp);
+      // Glyph ➔ points right at 0°; map φ=0 (forward) → −90° (up)
+      const degrees = (phi * 180) / Math.PI - 90;
       arrow.style.transform = `rotate(${degrees}deg)`;
       speed.textContent = `${this.wind.speed.toFixed(1)} kn`;
+    }
+    if (phaseEl) phaseEl.textContent = this.wind.phase || 'breeze';
+  }
+
+  clearWindSock() {
+    if (!this.windSock) return;
+    const { root } = this.windSock;
+    if (root?.parent) root.parent.remove(root);
+    this.windSock = null;
+  }
+
+  /** Mount a windsock on a small island (Paris fountain only). Scene-parented so yaw is unambiguous. */
+  attachParisWindSock(spawned) {
+    this.clearWindSock();
+    const mapId = this.map?.id || this.selectedMapId;
+    const isParis = mapId === 'paris_fountain' || this.map?.sceneryKey === 'paris';
+    if (!isParis) return;
+
+    const list = spawned || [];
+    const host =
+      list.find(({ obs }) => obs.type === 'island')
+      || list.find(({ obs }) => obs.type === 'lighthouse')
+      || list.find(({ obs }) => obs.type === 'rock');
+    if (!host) {
+      console.warn('[windsock] No island host found on Paris map');
+      return;
+    }
+
+    const { obs } = host;
+    const sock = createWindSock(obs.radius);
+    // World position on the grass cap (not parented to randomly-rotated island)
+    const y = obs.radius * 0.55;
+    sock.position.set(obs.x, y, obs.y);
+    this.scene.add(sock);
+
+    this.windSock = {
+      root: sock,
+      sleeve: sock.userData.sleeve,
+    };
+    this.updateWindSock(true);
+  }
+
+  /**
+   * Sleeve tip streams downwind.
+   * Sim wind (cos θ, sin θ) on XZ; sleeve local +X → rotation.y = −θ.
+   */
+  updateWindSock(snap = false) {
+    const sock = this.windSock;
+    if (!sock?.sleeve) return;
+    const targetYaw = -(this.wind.angle || 0);
+    if (snap) {
+      sock.sleeve.rotation.y = targetYaw;
+    } else {
+      // Ease toward wind so turns read clearly
+      let diff = targetYaw - sock.sleeve.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      sock.sleeve.rotation.y += diff * 0.12;
+    }
+    const fill = 0.9 + Math.min(0.35, (this.wind.speed || 5) * 0.025);
+    const gust = this.wind.phase === 'gust' ? 1.08 : this.wind.phase === 'lull' ? 0.92 : 1;
+    sock.sleeve.scale.set(fill * gust, 1, 1);
+  }
+
+  populateCourseSelect(courses) {
+    this.courseCatalog = courses || [];
+    const sel = document.getElementById('course-select');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Free play</option>';
+    for (const c of this.courseCatalog) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      const pb = this.readCourseBest(c.id);
+      const pbLabel = pb != null ? ` · PB ${(pb / 1000).toFixed(1)}s` : '';
+      opt.textContent = `${c.name}${pbLabel}`;
+      opt.title = c.blurb || '';
+      sel.append(opt);
+    }
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  }
+
+  readCourseBest(courseId) {
+    try {
+      const raw = localStorage.getItem(`tbtb.courseBest.${courseId}`);
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  }
+
+  recordCourseBest(courseId, timeMs) {
+    const prev = this.readCourseBest(courseId);
+    let isNew = false;
+    if (prev == null || timeMs < prev) {
+      try {
+        localStorage.setItem(`tbtb.courseBest.${courseId}`, String(timeMs));
+      } catch {
+        /* ignore */
+      }
+      isNew = true;
+    }
+    return { bestMs: this.readCourseBest(courseId) ?? timeMs, isNew };
+  }
+
+  setCourseUiActive(active) {
+    const start = document.getElementById('btn-course-start');
+    const abandon = document.getElementById('btn-course-abandon');
+    const sel = document.getElementById('course-select');
+    if (start) start.hidden = active;
+    if (abandon) abandon.hidden = !active;
+    if (sel) sel.disabled = active;
+  }
+
+  setCourseStatus(text) {
+    const el = document.getElementById('course-status');
+    if (el) el.textContent = text || '';
+  }
+
+  spawnSplashRipple(x, y, strength = 1) {
+    if (!this.scene) return;
+    const r = 1.2 + strength * 1.4;
+    const geo = new THREE.RingGeometry(r * 0.4, r, 24);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.4, y);
+    this.scene.add(mesh);
+    this._splashRipples.push({ mesh, age: 0, life: 0.7 });
+  }
+
+  /** Floating +points above the boat; rises and fades out. */
+  spawnScorePopup(x, z, text) {
+    if (!this.scene) return;
+    const el = document.createElement('div');
+    el.className = 'ring-score-popup';
+    el.textContent = text;
+    const label = new CSS2DObject(el);
+    label.position.set(x, 4.2, z);
+    this.scene.add(label);
+    this._scorePopups.push({
+      label,
+      el,
+      age: 0,
+      life: 1.15,
+      startY: 4.2,
+    });
+  }
+
+  updateCourseRingHighlight(time) {
+    const nextId = this._courseNextRingId;
+    for (const id in this.obstacleMeshes) {
+      const mesh = this.obstacleMeshes[id];
+      if (!mesh || mesh.userData.obstacleType !== 'ring') continue;
+      const base = mesh.userData.baseScale || 1;
+      if (id === nextId) {
+        const pulse = 1 + Math.sin(time * 5) * 0.08;
+        mesh.scale.setScalar(base * pulse);
+        mesh.traverse((child) => {
+          if (child.isMesh && child.material && 'emissive' in child.material) {
+            child.material.emissive?.setHex?.(0x332211);
+            if ('emissiveIntensity' in child.material) child.material.emissiveIntensity = 0.35;
+          }
+        });
+      } else {
+        mesh.scale.setScalar(base);
+        mesh.traverse((child) => {
+          if (child.isMesh && child.material && 'emissiveIntensity' in child.material) {
+            child.material.emissiveIntensity = 0;
+          }
+        });
+      }
     }
   }
 
@@ -1113,29 +1585,87 @@ export class Game {
     this._lastFrameTime = now;
     const time = clock.getElapsedTime();
 
-    // Held A/D: walk left/right around the fountain rim
-    if (!this.menuOpen && !document.getElementById('start-screen').classList.contains('active')) {
-      if (this.keys.left || this.keys.right) {
-        // Facing the fountain: A = left (clockwise), D = right (counter-clockwise)
-        const dir = (this.keys.left ? 1 : 0) + (this.keys.right ? -1 : 0);
-        if (dir !== 0) {
-          this.playerAngle += dir * WALK_SPEED * (dt * 60);
-          this.onPlayerMove();
-        }
+    // A/D / arrows: walk the rim (Follow Player / Overview), or steer boat (Follow Boat)
+    const onStart = document.getElementById('start-screen')?.classList.contains('active');
+    const followBoat = this.activeCameraMode === 'followBoat';
+    const steeringBoat = !this.menuOpen && !onStart && followBoat;
+    const dir = (this.keys.left ? 1 : 0) + (this.keys.right ? -1 : 0);
+
+    if (steeringBoat) {
+      this.sfx?.setMoving(false);
+      if (dir !== this._steerDir) {
+        this._steerDir = dir;
+        this.socket?.emit('steerBoat', { dir });
+      }
+    } else {
+      if (this._steerDir !== 0) {
+        this._steerDir = 0;
+        this.socket?.emit('steerBoat', { dir: 0 });
+      }
+      // No rim walking in Follow Boat — A/D are boat steer only
+      const walking = !followBoat && !this.menuOpen && !onStart && dir !== 0;
+      this.sfx?.setMoving(walking);
+      if (walking) {
+        // Facing the fountain: left = clockwise, right = counter-clockwise
+        this.playerAngle += dir * WALK_SPEED * (dt * 60);
+        this.onPlayerMove();
       }
     }
 
-    // Center fountain water jets
+    // Center fountain water jets + map wildlife
     if (this.centerFountain) {
       updateCenterFountain(this.centerFountain, time);
     }
+    if (this.mapWorld) {
+      updateMapAmbience(this.mapWorld, time);
+    }
+    this.updateWindSock();
+    // Wind dial tracks rim walk / facing every frame (not only on network wind ticks)
+    this.updateWindVaneHUD();
 
-    // 1. Soft water glint
+    // 1. Soft water glint — roughness tracks wind speed
     if (this.waterMat) {
-      this.waterMat.roughness = 0.22 + Math.sin(time) * 0.04;
+      const windBoost = Math.min(0.12, (this.wind.speed || 5) * 0.008);
+      const gustBoost = this.wind.phase === 'gust' ? 0.04 : this.wind.phase === 'lull' ? -0.03 : 0;
+      this.waterMat.roughness = 0.2 + Math.sin(time) * 0.03 + windBoost + gustBoost;
+    }
+
+    this.updateCourseRingHighlight(time);
+
+    for (let i = this._splashRipples.length - 1; i >= 0; i--) {
+      const r = this._splashRipples[i];
+      r.age += dt;
+      const t = r.age / r.life;
+      if (t >= 1) {
+        this.scene.remove(r.mesh);
+        r.mesh.geometry?.dispose?.();
+        r.mesh.material?.dispose?.();
+        this._splashRipples.splice(i, 1);
+        continue;
+      }
+      r.mesh.scale.setScalar(1 + t * 2.2);
+      r.mesh.material.opacity = 0.55 * (1 - t);
+    }
+
+    for (let i = this._scorePopups.length - 1; i >= 0; i--) {
+      const p = this._scorePopups[i];
+      p.age += dt;
+      const t = Math.min(1, p.age / p.life);
+      p.label.position.y = p.startY + t * 5.5;
+      // Hold readable, then fade
+      const fade = t < 0.35 ? 1 : 1 - (t - 0.35) / 0.65;
+      p.el.style.opacity = String(Math.max(0, fade));
+      p.el.style.transform = `translateY(${-t * 8}px) scale(${1 + t * 0.12})`;
+      if (t >= 1) {
+        this.scene.remove(p.label);
+        p.el.remove();
+        this._scorePopups.splice(i, 1);
+      }
     }
 
     // 2. Interpolate boat positions and animate them floating/bobbing
+    const windLean = Math.min(0.08, (this.wind.speed || 0) * 0.006)
+      * (this.wind.phase === 'gust' ? 1.4 : this.wind.phase === 'lull' ? 0.3 : 1);
     for (const id in this.boatsData) {
       const data = this.boatsData[id];
       const mesh = this.boatMeshes[id];
@@ -1149,7 +1679,8 @@ export class Game {
         } else {
           const bobHeight = Math.sin(time * 2.5 + id.charCodeAt(0)) * 0.06;
           const tiltX = Math.cos(time * 1.5 + id.charCodeAt(0)) * 0.03;
-          const tiltZ = Math.sin(time * 1.2 + id.charCodeAt(0)) * 0.03;
+          const tiltZ = Math.sin(time * 1.2 + id.charCodeAt(0)) * 0.03
+            + Math.sin(this.wind.angle - data.angle) * windLean;
 
           // Follow server closely so local lerp doesn't slide hulls into solids
           mesh.position.x += (data.x - mesh.position.x) * 0.4;
@@ -1192,8 +1723,9 @@ export class Game {
       const controller = this.avatarControllers[id];
 
       if (avatar) {
-        const targetX = Math.cos(state.angle) * INNER_PATH_RADIUS;
-        const targetZ = Math.sin(state.angle) * INNER_PATH_RADIUS;
+        const rim = this.pathPos(state.angle);
+        const targetX = rim.x;
+        const targetZ = rim.z;
 
         const prevX = avatar.position.x;
         const prevZ = avatar.position.z;
@@ -1204,9 +1736,11 @@ export class Game {
         const moveDx = avatar.position.x - prevX;
         const moveDz = avatar.position.z - prevZ;
         const moveSpeed = Math.hypot(moveDx, moveDz);
-        // Local: drive walk from held A/D (slow rim speed can sit under the lerp threshold)
+        // Local: rim-walk anim only outside Follow Boat (A/D steer the hull there)
         const isMoving = id === this.localId
-          ? (this.keys.left || this.keys.right)
+          ? this.activeCameraMode !== 'followBoat'
+            && (this.keys.left || this.keys.right)
+            && !this.menuOpen
           : moveSpeed > 0.006;
 
         controller?.setMoving(isMoving);

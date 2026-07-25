@@ -1,7 +1,7 @@
 const BOAT_LABELS = {
-  standard: 'Wood Sailboat',
-  cutter: 'Sloop',
-  pirate: 'Small Ship',
+  standard: 'Wood Sailboat — steady poke, honest wind',
+  cutter: 'Sloop — loves a breeze, hates a rock',
+  pirate: 'Small Ship — hard to sink, harder to turn',
 };
 
 const STICK_LABELS = {
@@ -121,6 +121,53 @@ export class DevMode {
     else if (this.activeTab === 'environment') this.renderEnvironment(this.body);
     else if (this.activeTab === 'boats') this.renderBoats(this.body);
     else if (this.activeTab === 'sticks') this.renderSticks(this.body);
+    else if (this.activeTab === 'sfx') this.renderSfx(this.body);
+  }
+
+  renderSfx(root) {
+    const sfx = window.game?.sfx;
+    if (!sfx) {
+      root.append(el('p', 'dev-hint', 'Start a game first so SFX can unlock.'));
+      return;
+    }
+
+    root.append(el('p', 'dev-hint', 'Poke sounds — choice is saved locally.'));
+    const pokeList = el('div', 'dev-sfx-list');
+    for (const opt of sfx.pokeOptions) {
+      const row = el('div', 'dev-sfx-row');
+      const selected = opt.id === sfx.pokeId;
+      const useBtn = el('button', selected ? 'btn-primary' : 'btn-secondary', selected ? 'Selected' : 'Use');
+      useBtn.type = 'button';
+      useBtn.addEventListener('click', () => {
+        sfx.setPokeId(opt.id);
+        this.render();
+      });
+      const previewBtn = el('button', 'btn-secondary', 'Preview');
+      previewBtn.type = 'button';
+      previewBtn.addEventListener('click', () => sfx.previewPoke(opt.id));
+      row.append(el('span', 'dev-sfx-label', opt.label), previewBtn, useBtn);
+      pokeList.append(row);
+    }
+    root.append(pokeList);
+
+    root.append(el('p', 'dev-hint', 'Ring score sounds — plays when you clear a ring.'));
+    const ringList = el('div', 'dev-sfx-list');
+    for (const opt of sfx.ringScoreOptions) {
+      const row = el('div', 'dev-sfx-row');
+      const selected = opt.id === sfx.ringScoreId;
+      const useBtn = el('button', selected ? 'btn-primary' : 'btn-secondary', selected ? 'Selected' : 'Use');
+      useBtn.type = 'button';
+      useBtn.addEventListener('click', () => {
+        sfx.setRingScoreId(opt.id);
+        this.render();
+      });
+      const previewBtn = el('button', 'btn-secondary', 'Preview');
+      previewBtn.type = 'button';
+      previewBtn.addEventListener('click', () => sfx.previewRingScore(opt.id));
+      row.append(el('span', 'dev-sfx-label', opt.label), previewBtn, useBtn);
+      ringList.append(row);
+    }
+    root.append(ringList);
   }
 
   addSlider(parent, { label, value, min, max, step, onInput }) {
@@ -248,6 +295,17 @@ export class DevMode {
       step: 0.00005,
       onInput: (n) => this.schedulePatch({ weather: { leeway: n } }),
     });
+
+    root.append(el('p', 'dev-hint', `Phase: ${w.phase || 'breeze'}`));
+
+    const phaseRow = el('div', 'dev-btn-row');
+    for (const phase of ['breeze', 'gust', 'lull']) {
+      const btn = el('button', 'btn-secondary', phase);
+      btn.type = 'button';
+      btn.addEventListener('click', () => this.schedulePatch({ weather: { phase } }));
+      phaseRow.append(btn);
+    }
+    root.append(phaseRow);
   }
 
   renderEnvironment(root) {

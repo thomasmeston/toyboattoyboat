@@ -1,13 +1,25 @@
 // Browser-safe fountain gameplay simulation shared by Socket.IO and offline solo.
 // onEmit(event, payload, toPlayerId): omitted toPlayerId broadcasts to every client.
-export function createFountainSim({ onEmit = () => {} } = {}) {
-  const FOUNTAIN_RADIUS = 100;
-  const INNER_PATH_RADIUS = 104.5;
-  const CENTER_FOUNTAIN_RADIUS = 20;
-  const POKE_RANGE = FOUNTAIN_RADIUS;
-  const LASSO_RANGE = FOUNTAIN_RADIUS;
-  const LASSO_PULL = 22;
-  const LASSO_DURATION = 0.9;
+import {
+  COURSE_DEFS,
+  buildCourseOrder,
+  listCourses,
+  medalForTime,
+} from './ringCourses.js';
+import { getMap, mapPayload, normalizeMapId } from './maps.js';
+
+export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' } = {}) {
+  let map = getMap(mapId);
+  let waterRx = map.water.rx;
+  let waterRz = map.water.rz;
+  let pathRx = map.path.rx;
+  let pathRz = map.path.rz;
+  let centerHazardRadius = map.centerHazardRadius;
+  let windScale = map.windScale;
+  let pokeRange = Math.max(waterRx, waterRz);
+  let lassoRange = pokeRange;
+  const LASSO_PULL = 4.5;
+  const LASSO_DURATION = 0.75;
   const LASSO_COOLDOWN = 1.6;
   const DRAG = 0.96;
   const COLLISION_DAMAGE = 15;
@@ -22,6 +34,10 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
   const RING_CLEAR_POINTS = 5;
   const RING_STREAK_BONUS = 20;
   const RING_STREAK_TARGET = 3;
+  const SHARED_RING_WINDOW = 2.5;
+  const SHARED_RING_BONUS = 5;
+  const SPLASH_IMPULSE_MIN = 0.12;
+  const STEER_YAW = 0.055; // base yaw rate while holding steer (scaled by turnRate)
   const BOT_TYPES = ['standard', 'cutter', 'pirate'];
   const BOT_CHARS = ['boy', 'girl'];
   const BOT_SYMBOLS = ['star', 'heart', 'anchor', 'moon'];
@@ -53,13 +69,15 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       maxSpeed: 2.8, drag: 0.96, windCatch: 1.0, mass: 1.0,
       durability: 1.0, turnRate: 0.1,
     },
+    // Sloop — loves wind, fragile hull, snappy turn
     cutter: {
-      maxSpeed: 3.45, drag: 0.968, windCatch: 1.3, mass: 0.82,
-      durability: 0.72, turnRate: 0.145,
+      maxSpeed: 3.85, drag: 0.972, windCatch: 1.55, mass: 0.72,
+      durability: 0.55, turnRate: 0.18,
     },
+    // Ship — tanky mass, weak sail, slow to weathercock
     pirate: {
-      maxSpeed: 2.15, drag: 0.948, windCatch: 0.75, mass: 1.4,
-      durability: 1.45, turnRate: 0.065,
+      maxSpeed: 1.95, drag: 0.935, windCatch: 0.55, mass: 1.75,
+      durability: 1.85, turnRate: 0.045,
     },
   };
   const STICK_STATS = {
@@ -82,8 +100,13 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     speed: 5,
     targetAngle: 0,
     targetSpeed: 5,
-    changeTimer: 0,
+    changeTimer: 8,
+    phase: 'breeze',
+    phaseTimer: 0,
   };
+  let simTime = 0;
+  let lastRingClear = { at: -999, by: null };
+  let splashEmitCooldown = 0;
 
   function structuredCloneSafe(value) {
     return JSON.parse(JSON.stringify(value));
@@ -99,65 +122,109 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     }
   }
 
+  function applyMapConfig(nextMapId) {
+    map = getMap(nextMapId);
+    waterRx = map.water.rx;
+    waterRz = map.water.rz;
+    pathRx = map.path.rx;
+    pathRz = map.path.rz;
+    centerHazardRadius = map.centerHazardRadius;
+    windScale = map.windScale;
+    pokeRange = Math.max(waterRx, waterRz);
+    lassoRange = pokeRange;
+  }
+
+  function rimPos(angle, rx = pathRx, rz = pathRz) {
+    return { x: Math.cos(angle) * rx, y: Math.sin(angle) * rz };
+  }
+
+  /** Ellipse scale of (x,y) vs water basin (1 = on shore). */
+  function ellipseScale(x, y, rx = waterRx, rz = waterRz) {
+    const ux = x / Math.max(1e-6, rx);
+    const uy = y / Math.max(1e-6, rz);
+    return Math.hypot(ux, uy);
+  }
+
+  function clampToWater(boat, margin = BOAT_RADIUS) {
+    const rx = Math.max(1, waterRx - margin);
+    const rz = Math.max(1, waterRz - margin);
+    const scale = ellipseScale(boat.x, boat.y, rx, rz);
+    if (scale <= 1 || scale < 1e-8) return 0;
+    const nx = (boat.x / rx) / scale;
+    const ny = (boat.y / rz) / scale;
+    // Outward normal in world space (approx from unit-ellipse gradient)
+    const gx = boat.x / (rx * rx);
+    const gy = boat.y / (rz * rz);
+    const glen = Math.hypot(gx, gy) || 1;
+    const wx = gx / glen;
+    const wy = gy / glen;
+    boat.x = nx * rx;
+    boat.y = ny * rz;
+    const impact = boat.vx * wx + boat.vy * wy;
+    if (impact > 0) {
+      boat.vx -= (1 + BOUNCE) * impact * wx;
+      boat.vy -= (1 + BOUNCE) * impact * wy;
+    }
+    return Math.max(0, impact);
+  }
+
   function placementClearOf(existing, x, y, minDist) {
     return existing.every((o) => Math.hypot(x - o.x, y - o.y) >= minDist);
   }
 
+  function placeInEllipseBand(minR, maxR, clearDist) {
+    const minScale = minR / Math.max(waterRx, waterRz);
+    const maxScale = maxR / Math.max(waterRx, waterRz);
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const t = minScale + Math.random() * Math.max(0, maxScale - minScale);
+      const x = Math.cos(angle) * waterRx * t;
+      const y = Math.sin(angle) * waterRz * t;
+      if (ellipseScale(x, y) > 0.92) continue;
+      if (centerHazardRadius > 0 && Math.hypot(x, y) < centerHazardRadius + 8) continue;
+      if (placementClearOf(obstacles, x, y, clearDist)) return { x, y };
+    }
+    return null;
+  }
+
   function generateObstacles() {
-    for (let i = 0; i < 12; i++) {
-      let x;
-      let y;
-      let placed = false;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const distance = 28 + Math.random() * 55;
-        const angle = Math.random() * Math.PI * 2;
-        x = Math.cos(angle) * distance;
-        y = Math.sin(angle) * distance;
-        if (placementClearOf(obstacles, x, y, 10)) {
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) continue;
+    obstacles.length = 0;
+    const plan = map.obstaclePlan;
+    const w = plan.weights || {};
+    const solidW = w.solid ?? 0.55;
+    const buoyW = w.buoy ?? 0.15;
+    const leafW = w.leaf ?? 0.15;
+    // lilypad is remainder
+    for (let i = 0; i < plan.solids; i++) {
+      const pos = placeInEllipseBand(plan.solidMin, plan.solidMax, plan.solidClear);
+      if (!pos) continue;
       const roll = Math.random();
       let type;
       let radius;
-      if (roll < 0.55) {
+      if (roll < solidW) {
         type = Math.random() < 0.4 ? 'lighthouse' : 'island';
         radius = 4.2 + Math.random() * 2.8;
-      } else if (roll < 0.7) {
+      } else if (roll < solidW + buoyW) {
         type = 'buoy';
         radius = 2;
-      } else if (roll < 0.85) {
+      } else if (roll < solidW + buoyW + leafW) {
         type = 'leaf';
         radius = 4;
       } else {
         type = 'lilypad';
         radius = 3;
       }
-      obstacles.push({ id: `obs_${i}`, x, y, radius, type });
+      obstacles.push({ id: `obs_${i}`, x: pos.x, y: pos.y, radius, type });
     }
 
-    for (let i = 0; i < 6; i++) {
-      let x;
-      let y;
-      let placed = false;
-      for (let attempt = 0; attempt < 50; attempt++) {
-        const distance = 32 + Math.random() * 48;
-        const angle = Math.random() * Math.PI * 2;
-        x = Math.cos(angle) * distance;
-        y = Math.sin(angle) * distance;
-        if (placementClearOf(obstacles, x, y, 14)) {
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) continue;
+    for (let i = 0; i < plan.rings; i++) {
+      const pos = placeInEllipseBand(plan.ringMin, plan.ringMax, plan.ringClear);
+      if (!pos) continue;
       const aperture = 3.0 + Math.random() * 0.7;
       obstacles.push({
         id: `ring_${i}`,
-        x,
-        y,
+        x: pos.x,
+        y: pos.y,
         radius: aperture,
         innerRadius: aperture,
         facing: Math.random() * Math.PI * 2,
@@ -224,10 +291,11 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
   }
 
   function boatSpawnBesidePlayer(playerAngle) {
-    const spawnDist = FOUNTAIN_RADIUS - BOAT_RADIUS - 0.15;
+    const rx = Math.max(1, waterRx - BOAT_RADIUS - 0.15);
+    const rz = Math.max(1, waterRz - BOAT_RADIUS - 0.15);
     return {
-      x: Math.cos(playerAngle) * spawnDist,
-      y: Math.sin(playerAngle) * spawnDist,
+      x: Math.cos(playerAngle) * rx,
+      y: Math.sin(playerAngle) * rz,
       angle: playerAngle + Math.PI,
     };
   }
@@ -243,6 +311,7 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       vy: 0,
       omega: 0,
       pokeYawHold: 0,
+      steerDir: 0,
       angle: spawn.angle,
       damage: 100,
       isSunk: false,
@@ -251,6 +320,34 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       ringCooldowns: {},
       customization,
     };
+  }
+
+  function advanceCourse(playerId, obstacleId) {
+    const player = players[playerId];
+    const course = player?.course;
+    if (!course || course.status !== 'active') return;
+    const expect = course.ringOrder[course.nextIndex];
+    if (obstacleId !== expect) return;
+    course.nextIndex += 1;
+    emit('courseProgress', {
+      courseId: course.id,
+      nextIndex: course.nextIndex,
+      ringOrder: course.ringOrder,
+      nextRingId: course.ringOrder[course.nextIndex] || null,
+    }, playerId);
+    if (course.nextIndex >= course.ringOrder.length) {
+      const timeMs = Math.round((simTime - course.startedAt) * 1000);
+      const medal = medalForTime(course.id, timeMs);
+      course.status = 'complete';
+      course.finishedAt = simTime;
+      emit('courseFinished', {
+        courseId: course.id,
+        timeMs,
+        medal,
+        name: COURSE_DEFS[course.id]?.name || course.id,
+      }, playerId);
+      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+    }
   }
 
   function checkRingClears(boat, playerId) {
@@ -291,13 +388,38 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         boat.score += bonus;
         boat.ringStreak = 0;
       }
+
+      // Shared clear: another boat cleared any ring within the window
+      let sharedBonus = 0;
+      const otherId = lastRingClear.by;
+      if (
+        otherId
+        && otherId !== playerId
+        && simTime - lastRingClear.at <= SHARED_RING_WINDOW
+      ) {
+        sharedBonus = SHARED_RING_BONUS;
+        boat.score += sharedBonus;
+        const other = players[otherId];
+        if (other?.boat && !other.boat.isSunk) {
+          other.boat.score = (other.boat.score || 0) + sharedBonus;
+        }
+        emit('sharedRing', {
+          players: [playerId, otherId],
+          bonus: sharedBonus,
+        });
+      }
+      lastRingClear = { at: simTime, by: playerId };
+
       emit('ringCleared', {
         obstacleId: obs.id,
         points: RING_CLEAR_POINTS,
         bonus,
+        sharedBonus,
         score: boat.score,
         ringStreak: boat.ringStreak,
       }, playerId);
+
+      advanceCourse(playerId, obs.id);
     }
   }
 
@@ -343,11 +465,12 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     const boat = player.boat;
     const boatStats = getBoatStats(boat);
     const stick = getStickStats(boat);
-    const px = Math.cos(player.playerAngle) * INNER_PATH_RADIUS;
-    const py = Math.sin(player.playerAngle) * INNER_PATH_RADIUS;
+    const rim = rimPos(player.playerAngle);
+    const px = rim.x;
+    const py = rim.y;
     const toBoatX = boat.x - px;
     const toBoatY = boat.y - py;
-    if (Math.hypot(toBoatX, toBoatY) > POKE_RANGE) return false;
+    if (Math.hypot(toBoatX, toBoatY) > pokeRange) return false;
 
     const accuracy = Math.max(0.35, stick.accuracy);
     const centerPull = Math.max(0, 1.15 - accuracy);
@@ -396,10 +519,11 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     if (!player || !player.isPlaying || !player.boat || player.boat.isSunk) return false;
     if (player.lassoCooldown > 0) return false;
     const boat = player.boat;
-    const px = Math.cos(player.playerAngle) * INNER_PATH_RADIUS;
-    const py = Math.sin(player.playerAngle) * INNER_PATH_RADIUS;
+    const rim = rimPos(player.playerAngle);
+    const px = rim.x;
+    const py = rim.y;
     const dist = Math.hypot(boat.x - px, boat.y - py);
-    if (dist > LASSO_RANGE || dist < BOAT_RADIUS + 2) return false;
+    if (dist > lassoRange || dist < BOAT_RADIUS + 2) return false;
     player.lasso = { t: LASSO_DURATION };
     player.lassoCooldown = LASSO_COOLDOWN;
     emit('boatLassoed', { id: playerId });
@@ -416,8 +540,9 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     }
     const boat = player.boat;
     player.lasso.t -= dt;
-    const px = Math.cos(player.playerAngle) * INNER_PATH_RADIUS;
-    const py = Math.sin(player.playerAngle) * INNER_PATH_RADIUS;
+    const rim = rimPos(player.playerAngle);
+    const px = rim.x;
+    const py = rim.y;
     let dx = px - boat.x;
     let dy = py - boat.y;
     const dist = Math.hypot(dx, dy) || 1;
@@ -430,8 +555,9 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     let angleDiff = pullAngle - boat.angle;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    boat.angle += angleDiff * 0.12;
-    if (player.lasso.t <= 0 || dist < FOUNTAIN_RADIUS - BOAT_RADIUS - 1.5) {
+    // Soft yaw nudge toward the rim (lasso is a guide, not a yank)
+    boat.angle += angleDiff * 0.03;
+    if (player.lasso.t <= 0 || ellipseScale(boat.x, boat.y) > 0.88) {
       player.lasso = null;
     }
   }
@@ -479,21 +605,62 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     }
   }
 
+  function pickWindEvent() {
+    const roll = Math.random();
+    if (roll < 0.45) return 'turn';
+    if (roll < 0.75) return 'gust';
+    return 'lull';
+  }
+
+  function applyWindEvent(kind) {
+    if (kind === 'turn') {
+      wind.targetAngle = Math.random() * Math.PI * 2;
+      wind.targetSpeed = 3.5 + Math.random() * 5.5;
+      wind.phase = 'breeze';
+      wind.phaseTimer = 0;
+    } else if (kind === 'gust') {
+      const base = Math.max(4, wind.speed);
+      wind.targetSpeed = Math.min(18, base * 1.6 + Math.random() * 2);
+      wind.phase = 'gust';
+      wind.phaseTimer = 2 + Math.random() * 0.8;
+    } else if (kind === 'lull') {
+      wind.targetSpeed = 1 + Math.random() * 1.2;
+      wind.phase = 'lull';
+      wind.phaseTimer = 3.5 + Math.random() * 1.5;
+    }
+  }
+
   function updateWind(dt) {
     if (TUNABLES.windAuto) {
       wind.changeTimer -= dt;
       if (wind.changeTimer <= 0) {
-        wind.targetAngle = Math.random() * Math.PI * 2;
-        wind.targetSpeed = 2 + Math.random() * 10;
+        applyWindEvent(pickWindEvent());
         const span = Math.max(0, TUNABLES.windChangeMax - TUNABLES.windChangeMin);
         wind.changeTimer = TUNABLES.windChangeMin + Math.random() * span;
       }
     }
+
+    if ((wind.phase === 'gust' || wind.phase === 'lull') && wind.phaseTimer > 0) {
+      wind.phaseTimer -= dt;
+      if (wind.phaseTimer <= 0) {
+        wind.phase = 'breeze';
+        wind.targetSpeed = 3.5 + Math.random() * 5;
+      }
+    }
+
     let angleDiff = wind.targetAngle - wind.angle;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     wind.angle += angleDiff * dt * 0.2;
-    wind.speed += (wind.targetSpeed - wind.speed) * dt * 0.2;
+    wind.speed += (wind.targetSpeed - wind.speed) * dt * (wind.phase === 'gust' ? 0.45 : 0.2);
+  }
+
+  function publicWind() {
+    return {
+      angle: wind.angle,
+      speed: wind.speed,
+      phase: wind.phase,
+    };
   }
 
   function clampBoatSpeed(boat) {
@@ -537,27 +704,15 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
   }
 
   function resolveStaticCollisions(boat, id) {
-    let distFromCenter = Math.hypot(boat.x, boat.y);
-    if (distFromCenter < 1e-6) {
+    if (Math.hypot(boat.x, boat.y) < 1e-6) {
       boat.x = 0.01;
-      distFromCenter = 0.01;
     }
-    const maxDist = FOUNTAIN_RADIUS - BOAT_RADIUS;
-    if (distFromCenter > maxDist) {
-      const nx = boat.x / distFromCenter;
-      const ny = boat.y / distFromCenter;
-      const overlap = distFromCenter - maxDist;
-      boat.x -= nx * overlap;
-      boat.y -= ny * overlap;
-      const impact = boat.vx * nx + boat.vy * ny;
-      if (impact > 0) {
-        boat.vx -= (1 + BOUNCE) * impact * nx;
-        boat.vy -= (1 + BOUNCE) * impact * ny;
-        if (impact > 0.5) applyCollisionDamage(boat, impact * 5);
-      }
+    const rimImpact = clampToWater(boat, BOAT_RADIUS);
+    if (rimImpact > 0.5) applyCollisionDamage(boat, rimImpact * 5);
+    if (centerHazardRadius > 0) {
+      const centerImpact = separateFromCircle(boat, 0, 0, centerHazardRadius);
+      if (centerImpact > 0.35) applyCollisionDamage(boat, centerImpact * 4);
     }
-    const centerImpact = separateFromCircle(boat, 0, 0, CENTER_FOUNTAIN_RADIUS);
-    if (centerImpact > 0.35) applyCollisionDamage(boat, centerImpact * 4);
     for (const obs of obstacles) {
       if (obs.type === 'ring') continue;
       const impact = separateFromCircle(boat, obs.x, obs.y, obs.radius);
@@ -598,11 +753,23 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         a.vy -= impulse * ny;
         b.vx += impulse * nx;
         b.vy += impulse * ny;
+        if (impulse > SPLASH_IMPULSE_MIN && splashEmitCooldown <= 0) {
+          splashEmitCooldown = 0.35;
+          emit('boatSplashed', {
+            a: active[i].id,
+            b: active[j].id,
+            x: (a.x + b.x) * 0.5,
+            y: (a.y + b.y) * 0.5,
+            strength: Math.min(1.5, impulse),
+          });
+        }
       }
     }
   }
 
   function tick() {
+    simTime += DT;
+    if (splashEmitCooldown > 0) splashEmitCooldown -= DT;
     updateWind(DT);
     updateComputerPlayers(DT);
     const active = [];
@@ -645,10 +812,11 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       const windDirY = Math.sin(wind.angle);
       const pointOfSail = boatHeadingX * windDirX + boatHeadingY * windDirY;
       const drive = Math.max(-0.15, 0.25 + 0.75 * pointOfSail);
-      const sailAccel = wind.speed * TUNABLES.sailAccel * drive * stats.windCatch;
+      const windForce = wind.speed * windScale;
+      const sailAccel = windForce * TUNABLES.sailAccel * drive * stats.windCatch;
       boat.vx += boatHeadingX * sailAccel;
       boat.vy += boatHeadingY * sailAccel;
-      const leeway = wind.speed * TUNABLES.leeway * stats.windCatch;
+      const leeway = windForce * TUNABLES.leeway * stats.windCatch;
       boat.vx += windDirX * leeway;
       boat.vy += windDirY * leeway;
       clampBoatSpeed(boat);
@@ -659,6 +827,14 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       boat.angle += boat.omega || 0;
       if (boat.pokeYawHold > 0) {
         boat.pokeYawHold = Math.max(0, boat.pokeYawHold - DT);
+      }
+      const steer = boat.steerDir || 0;
+      if (steer !== 0) {
+        // Player yaw input: left (+) / right (−), scaled by hull turnRate
+        const yaw = steer * STEER_YAW * (0.55 + stats.turnRate * 4.5);
+        boat.angle += yaw;
+        boat.omega *= 0.5;
+        boat.pokeYawHold = Math.max(boat.pokeYawHold || 0, 0.25);
       }
       const currentSpeedSq = boat.vx * boat.vx + boat.vy * boat.vy;
       if ((boat.pokeYawHold || 0) <= 0 && currentSpeedSq > 0.01) {
@@ -707,7 +883,7 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     emit('stateUpdate', {
       boats: updatedBoats,
       avatars: avatarAngles,
-      wind: { angle: wind.angle, speed: wind.speed },
+      wind: publicWind(),
     });
   }
 
@@ -722,6 +898,7 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       weather: {
         angle: wind.angle,
         speed: wind.speed,
+        phase: wind.phase,
         autoChange: TUNABLES.windAuto,
         changeMinSec: TUNABLES.windChangeMin,
         changeMaxSec: TUNABLES.windChangeMax,
@@ -751,6 +928,12 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       if (weather.speed != null) {
         wind.speed = clampNum(weather.speed, 0, 30, wind.speed);
         wind.targetSpeed = wind.speed;
+      }
+      if (weather.phase === 'gust' || weather.phase === 'lull') {
+        applyWindEvent(weather.phase);
+      } else if (weather.phase === 'breeze') {
+        wind.phase = 'breeze';
+        wind.phaseTimer = 0;
       }
       if (typeof weather.autoChange === 'boolean') TUNABLES.windAuto = weather.autoChange;
       if (weather.changeMinSec != null) {
@@ -829,6 +1012,8 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     }
     wind.targetAngle = wind.angle;
     wind.targetSpeed = wind.speed;
+    wind.phase = 'breeze';
+    wind.phaseTimer = 0;
     return getDevSettings();
   }
 
@@ -863,6 +1048,11 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
     if (!player) return;
 
     if (event === 'joinGame') {
+      // First human to join (or sole solo player) may set the map
+      if (data.mapId && !hasHumanPlayers()) {
+        applyMapConfig(normalizeMapId(data.mapId));
+        generateObstacles();
+      }
       player.isPlaying = true;
       player.isBot = false;
       if (typeof data.playerAngle === 'number' && Number.isFinite(data.playerAngle)) {
@@ -882,8 +1072,14 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         stickType: data.stickType || 'wooden',
       });
       player.playerName = player.boat.customization.playerName;
+      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
       spawnComputerPlayers();
-      emit('initGame', { obstacles, fountainRadius: FOUNTAIN_RADIUS }, playerId);
+      emit('initGame', {
+        obstacles: [...obstacles],
+        map: mapPayload(map.id),
+        fountainRadius: waterRx,
+        courses: listCourses(),
+      }, playerId);
       for (const otherId in players) {
         if (otherId === playerId) continue;
         const other = players[otherId];
@@ -899,6 +1095,39 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         playerAngle: player.playerAngle,
         boat: player.boat,
       });
+      return;
+    }
+
+    if (event === 'changeMap') {
+      if (!player.isPlaying || player.isBot) return;
+      const nextId = normalizeMapId(data.mapId);
+      if (nextId === map.id) return;
+      applyMapConfig(nextId);
+      generateObstacles();
+      for (const id in players) {
+        const p = players[id];
+        if (!p?.isPlaying || !p.boat) continue;
+        p.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+        const customization = p.boat.customization;
+        const score = p.boat.score || 0;
+        p.boat = createBoatAtAngle(p.playerAngle, customization, score);
+      }
+      emit('initGame', {
+        obstacles: [...obstacles],
+        map: mapPayload(map.id),
+        fountainRadius: waterRx,
+        courses: listCourses(),
+        mapChanged: true,
+      });
+      for (const id in players) {
+        const p = players[id];
+        if (!p?.isPlaying || !p.boat) continue;
+        emit('playerJoined', {
+          id,
+          playerAngle: p.playerAngle,
+          boat: p.boat,
+        });
+      }
       return;
     }
 
@@ -919,6 +1148,12 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
       applyBoatLasso(playerId);
       return;
     }
+    if (event === 'steerBoat') {
+      if (!player.isPlaying || !player.boat || player.boat.isSunk) return;
+      const dir = Number(data.dir);
+      player.boat.steerDir = dir === 1 || dir === -1 ? dir : 0;
+      return;
+    }
     if (event === 'respawnBoat') {
       if (!player.isPlaying || !player.boat) return;
       const spawn = boatSpawnBesidePlayer(player.playerAngle);
@@ -931,6 +1166,7 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         vy: 0,
         omega: 0,
         pokeYawHold: 0,
+        steerDir: 0,
         angle: spawn.angle,
         damage: 100,
         isSunk: false,
@@ -938,6 +1174,38 @@ export function createFountainSim({ onEmit = () => {} } = {}) {
         ringCooldowns: {},
       });
       emit('boatRespawned', { id: playerId, boat: player.boat });
+      return;
+    }
+    if (event === 'startCourse') {
+      if (!player.isPlaying || !player.boat || player.boat.isSunk) return;
+      const courseId = data.courseId;
+      if (!COURSE_DEFS[courseId]) return;
+      const ringOrder = buildCourseOrder(obstacles, courseId);
+      if (!ringOrder) {
+        emit('courseError', { message: 'Not enough rings for this course.' }, playerId);
+        return;
+      }
+      player.course = {
+        id: courseId,
+        status: 'active',
+        ringOrder,
+        nextIndex: 0,
+        startedAt: simTime,
+        finishedAt: 0,
+      };
+      emit('courseStarted', {
+        courseId,
+        name: COURSE_DEFS[courseId].name,
+        ringOrder,
+        nextRingId: ringOrder[0],
+        medalTimes: COURSE_DEFS[courseId].medalTimes,
+      }, playerId);
+      return;
+    }
+    if (event === 'abandonCourse') {
+      if (!player.course || player.course.status !== 'active') return;
+      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+      emit('courseAbandoned', {}, playerId);
       return;
     }
     if (event === 'leaveGame') {

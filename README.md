@@ -37,14 +37,18 @@ npm run build:client  # production client build
 
 1. Pick solo or multiplayer, customize sailor / boat / stick / flag.
 2. **Set Sail** — you spawn on the fountain rim with your boat in the water.
-3. Guide the boat with stick pokes; wind and water drag do the rest.
-4. Sail through the brass rings to score (streaks pay bonus).
+3. Guide the boat with stick pokes; wind (breeze, gusts, lulls) and water drag do the rest.
+4. Sail through brass rings to score (streaks and double-clears with another boat pay bonus).
+5. Optional **Courses** in the pause menu (**Esc** → Figure-eight, Island hop, Rim run) — timed runs with bronze/silver/gold and a personal best saved locally.
+
+**Boats:** Sailboat is balanced; Sloop loves wind but dents easily; Ship tanks hits but turns slowly.
 
 ### Controls
 
 | Input | Action |
 |-------|--------|
-| **A** / **D** (or arrows) | Walk left / right on the rim |
+| **A** / **D** or **←** / **→** | Walk left / right on the rim (Follow Player) |
+| **A** / **D** or **←** / **→** | Steer the boat (Follow Boat view) |
 | **Click** boat (or **Space** while aimed) | Stick poke |
 | **E** | Lasso / reel boat toward you |
 | **V** | Cycle camera (Follow Player → Follow Boat → Overview) |
@@ -57,10 +61,11 @@ npm run build:client  # production client build
 
 Press **`~`** to open a panel with live server-side tweaks:
 
-- **Weather** — wind angle/speed, auto-change, sail & leeway strength
+- **Weather** — wind angle/speed, auto-change, sail & leeway, phase overrides
 - **Environment** — poke impulse, yaw, weathercock
 - **Boats** — per boat-type stats (speed, drag, wind catch, mass, …)
 - **Sticks** — power, accuracy, softness
+- **SFX** — poke clip picker
 
 **Reset** restores defaults. Changes apply immediately for everyone on that server.
 

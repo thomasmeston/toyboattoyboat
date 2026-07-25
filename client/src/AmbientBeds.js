@@ -2,6 +2,7 @@
  * View-mode ambient beds (SFX channel, separate from BGM).
  * Park: Mixkit "Morning sound in a garden" — https://mixkit.co (Mixkit License)
  * Sea:  Mixkit "Wooden ship on the sea" — https://mixkit.co (Mixkit License)
+ * One-shots (footsteps / poke) live in Sfx.js on the same volume slider.
  */
 
 import { assetUrl } from './assetUrl.js';
