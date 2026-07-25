@@ -17,107 +17,103 @@
 
         <!-- Customization / Lobby Panel (Start Screen) -->
         <div id="start-screen" class="overlay-panel active">
-            <div class="glass-card">
+            <div class="glass-card start-menu-card">
                 <div class="logo-area">
                     <h1 class="game-title">ToyBoat<span>ToyBoat</span></h1>
                 </div>
 
-                <div class="setup-section play-mode-section">
-                    <h3>Play Mode</h3>
-                    <div class="play-mode-options" role="group" aria-label="Play mode">
-                        <button type="button" class="play-mode-btn active" data-play-mode="solo">
-                            Solo
-                            <small>You + park boats</small>
-                        </button>
-                        <button type="button" class="play-mode-btn" data-play-mode="multiplayer">
-                            Multiplayer
-                            <small>Join via tunnel</small>
-                        </button>
+                <div class="setup-top">
+                    <div class="setup-section play-mode-section">
+                        <h3>Play Mode</h3>
+                        <div class="play-mode-options" role="group" aria-label="Play mode">
+                            <button type="button" class="play-mode-btn active" data-play-mode="solo">
+                                Solo
+                                <small>You + park bots</small>
+                            </button>
+                            <button type="button" class="play-mode-btn" data-play-mode="multiplayer">
+                                Multiplayer
+                                <small>Tunnel URL</small>
+                            </button>
+                        </div>
+                        <div id="solo-mode-panel" class="play-mode-panel">
+                            <p class="server-url-hint">Offline on Pages · local uses <code>npm run dev</code></p>
+                        </div>
+                        <div id="multiplayer-mode-panel" class="play-mode-panel" hidden>
+                            <input
+                                type="url"
+                                id="server-url"
+                                class="player-name-input server-url-input"
+                                placeholder="https://….trycloudflare.com"
+                                autocomplete="off"
+                                spellcheck="false"
+                                aria-label="Server URL"
+                            >
+                            <p class="server-url-hint">Friends: same Pages link with <code>?server=</code> your tunnel URL.</p>
+                        </div>
                     </div>
-                    <div id="solo-mode-panel" class="play-mode-panel">
-                        <p class="server-url-hint">Works offline on GitHub Pages with you + park bots. Local development still uses <code>npm run dev</code>.</p>
-                    </div>
-                    <div id="multiplayer-mode-panel" class="play-mode-panel" hidden>
-                        <label class="server-url-label" for="server-url">Server URL</label>
+
+                    <div class="setup-section name-section">
+                        <h3>Your Name</h3>
                         <input
-                            type="url"
-                            id="server-url"
-                            class="player-name-input server-url-input"
-                            placeholder="https://….trycloudflare.com"
-                            autocomplete="off"
+                            type="text"
+                            id="player-name"
+                            class="player-name-input"
+                            maxlength="16"
+                            placeholder="Sailor name"
+                            autocomplete="nickname"
                             spellcheck="false"
                         >
-                        <p class="server-url-hint">Paste your Cloudflare Tunnel URL. Friends can open the same Pages link with <code>?server=</code> that URL.</p>
                     </div>
-                </div>
-
-                <div class="setup-section name-section">
-                    <h3>Your Name</h3>
-                    <input
-                        type="text"
-                        id="player-name"
-                        class="player-name-input"
-                        maxlength="16"
-                        placeholder="Enter sailor name"
-                        autocomplete="nickname"
-                        spellcheck="false"
-                    >
                 </div>
 
                 <div class="setup-grid">
-                    <!-- Character Selection -->
                     <div class="setup-section">
-                        <h3>1. Choose Sailor</h3>
+                        <h3>Sailor</h3>
                         <div class="card-options" id="character-options">
-                            <div class="option-card active" data-character="boy">
+                            <div class="option-card active" data-character="boy" title="Boy">
                                 <div class="option-preview"></div>
                             </div>
-                            <div class="option-card" data-character="girl">
+                            <div class="option-card" data-character="girl" title="Girl">
                                 <div class="option-preview"></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Boat Selection -->
                     <div class="setup-section">
-                        <h3>2. Choose Wood Boat</h3>
+                        <h3>Boat</h3>
                         <div class="card-options" id="boat-options">
-                            <div class="option-card active" data-boat="standard">
+                            <div class="option-card active" data-boat="standard" title="Balanced speed &amp; hull">
                                 <div class="option-preview"></div>
-                                <span>Wood Sailboat</span>
-                                <small class="option-stat">Balanced speed &amp; hull</small>
+                                <span>Sailboat</span>
                             </div>
-                            <div class="option-card" data-boat="cutter">
+                            <div class="option-card" data-boat="cutter" title="Fast &amp; windy · fragile">
                                 <div class="option-preview"></div>
                                 <span>Sloop</span>
-                                <small class="option-stat">Fast &amp; windy · fragile</small>
                             </div>
-                            <div class="option-card" data-boat="pirate">
+                            <div class="option-card" data-boat="pirate" title="Heavy tank · slow turn">
                                 <div class="option-preview"></div>
-                                <span>Sail Boat</span>
-                                <small class="option-stat">Heavy tank · slow turn</small>
+                                <span>Ship</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Color Customization -->
                     <div class="setup-section">
-                        <h3>3. Colors & Flag</h3>
-                        <div class="customization-controls">
+                        <h3>Colors &amp; Flag</h3>
+                        <div class="customization-controls customization-controls-inline">
                             <div class="control-group">
-                                <label for="boat-color">Hull Color</label>
+                                <label for="boat-color">Hull</label>
                                 <div class="color-picker-wrapper">
                                     <input type="color" id="boat-color" value="#c4a574">
                                 </div>
                             </div>
                             <div class="control-group">
-                                <label for="flag-color">Flag Color</label>
+                                <label for="flag-color">Flag</label>
                                 <div class="color-picker-wrapper">
                                     <input type="color" id="flag-color" value="#baffc9">
                                 </div>
                             </div>
-                            <div class="control-group">
-                                <label>Flag Symbol</label>
+                            <div class="control-group control-group-symbols">
+                                <label>Symbol</label>
                                 <div class="symbol-options" id="symbol-options">
                                     <div class="symbol-btn active" data-symbol="star">★</div>
                                     <div class="symbol-btn" data-symbol="heart">♥</div>
@@ -128,24 +124,20 @@
                         </div>
                     </div>
 
-                    <!-- Pushstick Selection -->
                     <div class="setup-section">
-                        <h3>4. Select Pushstick</h3>
+                        <h3>Pushstick</h3>
                         <div class="card-options" id="stick-options">
-                            <div class="option-card active" data-stick="wooden">
+                            <div class="option-card active" data-stick="wooden" title="Steady all-round poke">
                                 <div class="option-preview"></div>
-                                <span>Hickory Branch</span>
-                                <small class="option-stat">Steady all-round poke</small>
+                                <span>Hickory</span>
                             </div>
-                            <div class="option-card" data-stick="brass">
+                            <div class="option-card" data-stick="brass" title="Powerful · wilder aim">
                                 <div class="option-preview"></div>
-                                <span>Polished Brass</span>
-                                <small class="option-stat">Powerful · wilder aim</small>
+                                <span>Brass</span>
                             </div>
-                            <div class="option-card" data-stick="ribbon">
+                            <div class="option-card" data-stick="ribbon" title="Soft &amp; precise guide">
                                 <div class="option-preview"></div>
-                                <span>Ribbon Cane</span>
-                                <small class="option-stat">Soft &amp; precise guide</small>
+                                <span>Ribbon</span>
                             </div>
                         </div>
                     </div>

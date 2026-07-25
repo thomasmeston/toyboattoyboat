@@ -102,6 +102,130 @@ body, html {
   opacity: 1;
 }
 
+/* Start screen — compact single-viewport menu */
+#start-screen {
+  align-items: flex-start;
+  padding: 12px 0;
+  overflow-y: auto;
+}
+
+#start-screen .start-menu-card {
+  padding: 20px 24px 16px;
+  margin: auto;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+#start-screen .game-title {
+  font-size: 2.15rem;
+  letter-spacing: -1px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+#start-screen .setup-top {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 640px) {
+  #start-screen .setup-top {
+    grid-template-columns: 1.35fr 1fr;
+    align-items: start;
+  }
+}
+
+#start-screen .play-mode-section,
+#start-screen .name-section {
+  margin-bottom: 0;
+}
+
+#start-screen .play-mode-btn {
+  padding: 8px 10px;
+  font-size: 0.92rem;
+}
+
+#start-screen .play-mode-panel {
+  margin-top: 8px;
+}
+
+#start-screen .player-name-input {
+  padding: 9px 12px;
+  font-size: 0.95rem;
+}
+
+#start-screen .setup-grid {
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#start-screen .setup-section h3 {
+  font-size: 0.78rem;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+}
+
+#start-screen .option-card {
+  padding: 8px 6px;
+}
+
+#start-screen .option-card:hover {
+  transform: translateY(-2px);
+}
+
+#start-screen .option-preview {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 6px;
+}
+
+#start-screen .option-card span {
+  font-size: 0.78rem;
+}
+
+#start-screen .card-options {
+  gap: 8px;
+}
+
+#start-screen .customization-controls-inline {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+#start-screen .customization-controls-inline .control-group {
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+#start-screen .control-group label {
+  font-size: 0.8rem;
+}
+
+#start-screen .color-picker-wrapper {
+  width: 40px;
+  height: 28px;
+}
+
+#start-screen .action-bar {
+  margin-top: 4px;
+}
+
+#start-screen .btn-primary {
+  padding: 12px 28px;
+  font-size: 1rem;
+}
+
+#start-screen .symbol-btn {
+  width: 30px;
+  height: 30px;
+  font-size: 0.95rem;
+}
+
 /* Start screen style */
 .game-title {
   font-family: var(--font-display);
@@ -265,8 +389,19 @@ body, html {
   .setup-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .setup-section:last-child {
-    grid-column: span 2;
+}
+
+#start-screen .setup-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 520px) {
+  #start-screen .setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #start-screen .customization-controls-inline {
+    grid-template-columns: 1fr;
   }
 }
 
