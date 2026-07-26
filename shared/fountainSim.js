@@ -38,7 +38,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
   const SHARED_RING_BONUS = 5;
   const SPLASH_IMPULSE_MIN = 0.12;
   const STEER_YAW = 0.055; // base yaw rate while holding steer (scaled by turnRate)
-  const BOT_TYPES = ['standard', 'cutter', 'pirate'];
+  const BOT_TYPES = ['standard', 'cutter', 'pirate', 'yacht'];
   const BOT_CHARS = ['boy', 'girl'];
   const BOT_SYMBOLS = ['star', 'heart', 'anchor', 'moon'];
   const BOT_STICKS = ['wooden', 'brass', 'ribbon'];
@@ -79,6 +79,11 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
       maxSpeed: 1.95, drag: 0.935, windCatch: 0.55, mass: 1.75,
       durability: 1.85, turnRate: 0.045,
     },
+    // Yacht — classic hull, steady and sturdy
+    yacht: {
+      maxSpeed: 2.55, drag: 0.95, windCatch: 1.1, mass: 1.25,
+      durability: 1.35, turnRate: 0.08,
+    },
   };
   const STICK_STATS = {
     wooden: { power: 1.0, accuracy: 1.0, softness: 1.0 },
@@ -92,6 +97,9 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
   const players = {};
   const connectedIds = new Set();
   const obstacles = [];
+  /** Ambient props (Echo Park swans) — same collision as player boats, no damage/score. */
+  const ambientBoats = [];
+  const SWAN_RADIUS = 5.5;
   let botSerial = 0;
   let connectionSerial = 0;
   let timer = null;
@@ -189,6 +197,17 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
 
   function generateObstacles() {
     obstacles.length = 0;
+    // Map landmarks first so random props clear them (and boats collide)
+    for (const s of map.scenerySolids || []) {
+      obstacles.push({
+        id: s.id,
+        x: s.x,
+        y: s.y,
+        radius: s.radius,
+        type: 'island',
+        noMesh: true,
+      });
+    }
     const plan = map.obstaclePlan;
     const w = plan.weights || {};
     const solidW = w.solid ?? 0.55;
@@ -231,11 +250,82 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
         type: 'ring',
       });
     }
+    generateAmbientBoats();
   }
+
+  function generateAmbientBoats() {
+    ambientBoats.length = 0;
+    if (map.id !== 'echo_park_lake') return;
+    for (let i = 0; i < 3; i++) {
+      const homeX = -14 + i * 14;
+      const homeY = -(waterRz * 0.62);
+      const boat = {
+        id: `swan_${i}`,
+        kind: 'swan',
+        ambient: true,
+        radius: SWAN_RADIUS,
+        maxSpeed: 1.15,
+        x: homeX,
+        y: homeY,
+        vx: 0,
+        vy: 0,
+        angle: Math.PI * 0.15 * (i - 1),
+        omega: 0,
+        homeX,
+        homeY,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.08 + Math.random() * 0.06,
+        orbitR: 2.7,
+        isSunk: false,
+        damage: 100,
+      };
+      for (let k = 0; k < 10; k++) resolveStaticCollisions(boat, null);
+      ambientBoats.push(boat);
+    }
+  }
+
+  function updateAmbientBoats() {
+    for (const boat of ambientBoats) {
+      const targetX = boat.homeX + Math.cos(simTime * boat.speed + boat.phase) * boat.orbitR;
+      const targetY = boat.homeY + Math.sin(simTime * boat.speed + boat.phase) * boat.orbitR;
+      boat.vx += (targetX - boat.x) * 0.018;
+      boat.vy += (targetY - boat.y) * 0.018;
+      boat.vx += Math.cos(wind.angle) * wind.speed * windScale * 0.0015;
+      boat.vy += Math.sin(wind.angle) * wind.speed * windScale * 0.0015;
+      boat.vx *= 0.96;
+      boat.vy *= 0.96;
+      clampBoatSpeed(boat);
+      boat.x += boat.vx;
+      boat.y += boat.vy;
+      const spdSq = boat.vx * boat.vx + boat.vy * boat.vy;
+      if (spdSq > 0.008) {
+        const targetAngle = Math.atan2(boat.vy, boat.vx);
+        let angleDiff = targetAngle - boat.angle;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        boat.angle += angleDiff * 0.12;
+      }
+    }
+  }
+
   generateObstacles();
 
   function randomHexColor() {
     return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')}`;
+  }
+
+  /** Saturated mid-tone for outfit pieces (avoids muddy / neon extremes). */
+  function randomClothesColor() {
+    const h = Math.floor(Math.random() * 360);
+    const s = 0.48 + Math.random() * 0.38;
+    const l = 0.34 + Math.random() * 0.28;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const k = (n + h / 30) % 12;
+      const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * Math.min(1, Math.max(0, c)));
+    };
+    return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   }
 
   function sanitizePlayerName(name) {
@@ -271,6 +361,8 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
       flagSymbol: BOT_SYMBOLS[Math.floor(Math.random() * BOT_SYMBOLS.length)],
       stickColor: randomHexColor(),
       stickType: BOT_STICKS[Math.floor(Math.random() * BOT_STICKS.length)],
+      clothesColor: randomClothesColor(),
+      clothesAccent: randomClothesColor(),
     };
   }
 
@@ -663,8 +755,12 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     };
   }
 
+  function hullRadius(boat) {
+    return boat?.radius ?? BOAT_RADIUS;
+  }
+
   function clampBoatSpeed(boat) {
-    const maxSpeed = getBoatStats(boat).maxSpeed || MAX_BOAT_SPEED;
+    const maxSpeed = boat.maxSpeed ?? getBoatStats(boat).maxSpeed ?? MAX_BOAT_SPEED;
     const speed = Math.hypot(boat.vx, boat.vy);
     if (speed > maxSpeed) {
       const scale = maxSpeed / speed;
@@ -674,6 +770,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
   }
 
   function applyCollisionDamage(boat, amount) {
+    if (boat.ambient) return;
     const durability = Math.max(0.35, getBoatStats(boat).durability);
     boat.damage = Math.max(0, boat.damage - amount / durability);
     if (boat.damage <= 0) boat.isSunk = true;
@@ -683,7 +780,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     let dx = boat.x - cx;
     let dy = boat.y - cy;
     let dist = Math.hypot(dx, dy);
-    const minDist = solidRadius + BOAT_RADIUS;
+    const minDist = solidRadius + hullRadius(boat);
     if (dist < 1e-6) {
       dx = 1;
       dy = 0;
@@ -707,16 +804,16 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     if (Math.hypot(boat.x, boat.y) < 1e-6) {
       boat.x = 0.01;
     }
-    const rimImpact = clampToWater(boat, BOAT_RADIUS);
-    if (rimImpact > 0.5) applyCollisionDamage(boat, rimImpact * 5);
+    const rimImpact = clampToWater(boat, hullRadius(boat));
+    if (!boat.ambient && rimImpact > 0.5) applyCollisionDamage(boat, rimImpact * 5);
     if (centerHazardRadius > 0) {
       const centerImpact = separateFromCircle(boat, 0, 0, centerHazardRadius);
-      if (centerImpact > 0.35) applyCollisionDamage(boat, centerImpact * 4);
+      if (!boat.ambient && centerImpact > 0.35) applyCollisionDamage(boat, centerImpact * 4);
     }
     for (const obs of obstacles) {
-      if (obs.type === 'ring') continue;
+      if (obs.type === 'ring' || obs.type === 'lilypad') continue;
       const impact = separateFromCircle(boat, obs.x, obs.y, obs.radius);
-      if (impact > 0.2) {
+      if (!boat.ambient && impact > 0.2) {
         applyCollisionDamage(boat, COLLISION_DAMAGE * Math.min(1, impact));
         emit('collision', { obstacleId: obs.id, newDamage: boat.damage }, id);
       }
@@ -732,7 +829,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         let dist = Math.hypot(dx, dy);
-        const minDist = BOAT_RADIUS * 2;
+        const minDist = hullRadius(a) + hullRadius(b);
         if (dist < 1e-6) {
           dx = 1;
           dy = 0;
@@ -772,9 +869,14 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     if (splashEmitCooldown > 0) splashEmitCooldown -= DT;
     updateWind(DT);
     updateComputerPlayers(DT);
+    updateAmbientBoats();
     const active = [];
     const updatedBoats = [];
     const avatarAngles = [];
+
+    for (const boat of ambientBoats) {
+      active.push({ id: boat.id, boat });
+    }
 
     for (const id in players) {
       const player = players[id];
@@ -882,6 +984,13 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     }
     emit('stateUpdate', {
       boats: updatedBoats,
+      ambient: ambientBoats.map((b) => ({
+        id: b.id,
+        kind: b.kind,
+        x: b.x,
+        y: b.y,
+        angle: b.angle,
+      })),
       avatars: avatarAngles,
       wind: publicWind(),
     });

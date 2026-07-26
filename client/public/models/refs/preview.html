@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Character refs — paper-mache T-pose</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #1a1a1a;
+      color: #eee;
+      padding: 1.5rem;
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.25rem; }
+    p { color: #aaa; margin: 0 0 1.5rem; font-size: 0.9rem; }
+    section { margin-bottom: 2rem; }
+    h2 { font-size: 1rem; color: #ccc; margin: 0 0 0.75rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    figure {
+      margin: 0;
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    figcaption {
+      padding: 0.5rem 0.75rem;
+      background: #2a2a2a;
+      font-size: 0.85rem;
+      color: #bbb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Meshy reference images</h1>
+  <p>Low-poly paper-mâché · T-pose · blank face</p>
+
+  <section>
+    <h2>Boy</h2>
+    <div class="grid">
+      <figure>
+        <img src="./boy-front.png" alt="Boy front T-pose" />
+        <figcaption>boy-front.png</figcaption>
+      </figure>
+      <figure>
+        <img src="./boy-back.png" alt="Boy back T-pose" />
+        <figcaption>boy-back.png</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Girl</h2>
+    <div class="grid">
+      <figure>
+        <img src="./girl-front.png" alt="Girl front T-pose" />
+        <figcaption>girl-front.png</figcaption>
+      </figure>
+      <figure>
+        <img src="./girl-back.png" alt="Girl back T-pose" />
+        <figcaption>girl-back.png</figcaption>
+      </figure>
+    </div>
+  </section>
+</body>
+</html>

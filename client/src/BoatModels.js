@@ -8,22 +8,33 @@ import {
 import { assetUrl } from './assetUrl.js';
 
 /**
- * Wood boat models (Poly Pizza):
- * - standard: "Sailboat" wooden — Poly by Google (CC-BY) https://poly.pizza/m/1d76pfN4Dne
- * - cutter:   "Sailboat" — Poly by Google (CC-BY) https://poly.pizza/m/6okvxHsSdzO
- * - pirate:   "Sail Boat" — Quaternius (CC0) https://poly.pizza/m/BgSZXwmm7k
+ * Meshy wood toy boats (from refs in public/models/refs/boats/):
+ * - standard: simple wood sail (red main + blue jib)
+ * - cutter:   single-sail minimalist
+ * - pirate:   two-mast schooner
+ * - yacht:    DEE red/white variation
  */
 
 const BOAT_URLS = {
-  standard: assetUrl('models/boat-wooden-sail.glb'),
-  cutter: assetUrl('models/boat-sailboat.glb'),
-  pirate: assetUrl('models/boat-quaternius-sail.glb'),
+  standard: assetUrl('models/boat-simple-wood.glb'),
+  cutter: assetUrl('models/boat-single-sail.glb'),
+  pirate: assetUrl('models/boat-schooner.glb'),
+  yacht: assetUrl('models/boat-dee-yacht.glb'),
 };
 
 const TARGET_LENGTH = {
   standard: 5.5,
-  cutter: 6.0,
-  pirate: 6.4,
+  cutter: 5.2,
+  pirate: 6.6,
+  yacht: 5.8,
+};
+
+/** Extra sink after grounding (keel below water plane). Positive = lower hull into water. */
+const WATERLINE_SINK = {
+  standard: 1.15, // bulb keel sits below waterline
+  cutter: 0.2,
+  pirate: 0.05, // schooner — was sitting too deep
+  yacht: 0.55, // DEE yacht — nudge hull into the water
 };
 
 const cache = new Map();
@@ -79,7 +90,8 @@ function normalizeBoat(model, boatType) {
   const center = grounded.getCenter(new THREE.Vector3());
   model.position.x -= center.x;
   model.position.z -= center.z;
-  model.position.y -= grounded.min.y;
+  // Ground to mesh bottom, then sink so the hull (not keel tip) meets the water
+  model.position.y -= grounded.min.y + (WATERLINE_SINK[boatType] ?? 0);
   return model;
 }
 
@@ -131,7 +143,10 @@ export async function createWoodBoat(boatType, hullColor, flagColor, flagSymbol 
     tintWoodHull(model, hullColor);
     group.add(model);
 
-    const mastTipY = TARGET_LENGTH[type] * 0.5;
+    const mastTipY = TARGET_LENGTH[type] * 0.55;
+    const flagPivot = new THREE.Group();
+    flagPivot.name = 'BoatFlag';
+    flagPivot.position.set(0.05, mastTipY, 0);
     const flag = new THREE.Mesh(
       new THREE.PlaneGeometry(0.55, 0.35),
       new THREE.MeshStandardMaterial({
@@ -140,9 +155,12 @@ export async function createWoodBoat(boatType, hullColor, flagColor, flagSymbol 
         side: THREE.DoubleSide,
       }),
     );
-    flag.position.set(-0.35, mastTipY, 0);
+    // Hoist at pivot; cloth extends in +X so local yaw can stream downwind
+    flag.position.set(0.275, 0, 0);
     flag.castShadow = true;
-    group.add(flag);
+    flagPivot.add(flag);
+    group.add(flagPivot);
+    group.userData.boatFlag = flagPivot;
 
     return group;
   } catch (err) {

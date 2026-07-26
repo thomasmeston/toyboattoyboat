@@ -3,17 +3,20 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PALETTE, createPaperMaterial } from './StyleSystem.js';
 import { assetUrl } from './assetUrl.js';
 
-/** Park fountain — Poly by Google (CC-BY) https://poly.pizza/m/0YTMlW0CUHU */
-
-const FOUNTAIN_URL = assetUrl('models/fountain-center.glb');
-const TARGET_HEIGHT = 24;
+/** Paris — Poly by Google (CC-BY) https://poly.pizza/m/0YTMlW0CUHU */
+const PARIS_FOUNTAIN_URL = assetUrl('models/fountain-center.glb');
+const DEFAULT_TARGET_HEIGHT = 24;
 
 /**
  * Large centerpiece fountain with animated water jets.
+ * @param {{ url?: string, targetHeight?: number, name?: string }} [opts]
  */
-export function createCenterFountain() {
+export function createCenterFountain(opts = {}) {
+  const url = opts.url || PARIS_FOUNTAIN_URL;
+  const targetHeight = opts.targetHeight ?? DEFAULT_TARGET_HEIGHT;
+
   const group = new THREE.Group();
-  group.name = 'CenterFountain';
+  group.name = opts.name || 'CenterFountain';
 
   const pedestal = buildProceduralFountainBase();
   group.add(pedestal);
@@ -24,7 +27,7 @@ export function createCenterFountain() {
 
   const loader = new GLTFLoader();
   loader.load(
-    FOUNTAIN_URL,
+    url,
     (gltf) => {
       try {
         const model = gltf.scene;
@@ -43,7 +46,7 @@ export function createCenterFountain() {
         if (box.isEmpty()) box.setFromObject(model);
 
         const size = box.getSize(new THREE.Vector3());
-        const scale = TARGET_HEIGHT / Math.max(size.y, 0.001);
+        const scale = targetHeight / Math.max(size.y, 0.001);
         model.scale.setScalar(scale);
         model.updateMatrixWorld(true);
 
@@ -63,7 +66,7 @@ export function createCenterFountain() {
         model.traverse((child) => {
           if (child.isMesh) top.expandByObject(child);
         });
-        const spoutBase = (top.max.y || TARGET_HEIGHT) * 0.72;
+        const spoutBase = (top.max.y || targetHeight) * 0.72;
         jets.children.forEach((jet) => {
           const ratio = (jet.userData.baseY || 20) / 20;
           jet.userData.baseY = spoutBase + ratio * 10;
@@ -79,6 +82,59 @@ export function createCenterFountain() {
     undefined,
     () => console.warn('Center fountain GLB failed; keeping procedural pedestal'),
   );
+
+  return group;
+}
+
+/** Echo Park Lake — tall water spouts only (no stone fountain body). */
+export function createEchoParkFountain() {
+  const group = new THREE.Group();
+  group.name = 'EchoParkFountain';
+  const jets = buildEchoParkJets();
+  group.add(jets);
+  group.userData.waterJets = jets;
+  return group;
+}
+
+function buildEchoParkJets() {
+  const group = new THREE.Group();
+  group.name = 'EchoParkWaterJets';
+
+  const makeMat = () =>
+    new THREE.MeshStandardMaterial({
+      color: 0xd2f4ff,
+      emissive: 0x7ecfe8,
+      emissiveIntensity: 0.55,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.15,
+      metalness: 0.05,
+      depthWrite: false,
+    });
+
+  // Tall main column from the water surface
+  const main = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 3.4, 48, 16), makeMat());
+  main.position.y = 24;
+  main.userData.baseY = 24;
+  group.add(main);
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const h = 34 + (i % 3) * 5;
+    const jet = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.8, h, 12), makeMat());
+    const radius = 4 + (i % 2) * 2.5;
+    jet.position.set(Math.cos(angle) * radius, h * 0.5, Math.sin(angle) * radius);
+    jet.userData.baseY = h * 0.5;
+    group.add(jet);
+  }
+
+  const splash = new THREE.Mesh(
+    new THREE.SphereGeometry(6.5, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    makeMat(),
+  );
+  splash.position.y = 50;
+  splash.userData.baseY = 50;
+  group.add(splash);
 
   return group;
 }

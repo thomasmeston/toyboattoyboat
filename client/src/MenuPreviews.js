@@ -83,7 +83,7 @@ async function loadPreviewModel(slot, kind, id) {
 
 /**
  * Mount slowly-rotating 3D model previews into intro option cards.
- * Returns a handle with stop() to dispose when leaving the lobby.
+ * pause/resume avoids recreating WebGL contexts (which blanks the main game canvas).
  */
 export function startMenuPreviews() {
   const startScreen = document.getElementById('start-screen');
@@ -91,6 +91,7 @@ export function startMenuPreviews() {
   let raf = 0;
   let last = performance.now();
   let stopped = false;
+  let paused = false;
 
   const cards = document.querySelectorAll(
     '#character-options .option-card, #boat-options .option-card, #stick-options .option-card',
@@ -128,31 +129,50 @@ export function startMenuPreviews() {
 
   const tick = (now) => {
     if (stopped) return;
+    raf = requestAnimationFrame(tick);
+    if (paused) return;
+
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
     const menuVisible = startScreen?.classList.contains('active');
-    if (menuVisible) {
-      for (const slot of slots) {
-        if (slot.disposed) continue;
-        slot.pivot.rotation.y += slot.spin * dt;
-        slot.controller?.update?.(dt, now);
+    if (!menuVisible) return;
+
+    for (const slot of slots) {
+      if (slot.disposed) continue;
+      slot.pivot.rotation.y += slot.spin * dt;
+      slot.controller?.update?.(dt, now);
+      try {
         slot.renderer.render(slot.scene, slot.camera);
+      } catch {
+        /* context lost — ignore until resume/reload */
       }
     }
-
-    raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
 
   return {
+    pause() {
+      paused = true;
+    },
+    resume() {
+      if (stopped) return;
+      paused = false;
+      last = performance.now();
+    },
     stop() {
       if (stopped) return;
       stopped = true;
+      paused = true;
       cancelAnimationFrame(raf);
       for (const slot of slots) {
         slot.disposed = true;
         slot.controller?.dispose?.();
+        try {
+          slot.renderer.forceContextLoss?.();
+        } catch {
+          /* ignore */
+        }
         slot.renderer.dispose();
         slot.el.replaceChildren();
         slot.el.classList.remove('has-model-preview');

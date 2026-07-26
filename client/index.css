@@ -1024,8 +1024,8 @@ body, html {
 .controls-hint {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 0.9rem;
+  gap: 8px;
+  font-size: 0.85rem;
   color: var(--color-slate-light);
   font-weight: 500;
 }
@@ -1033,13 +1033,14 @@ body, html {
 .controls-hint strong {
   color: var(--color-slate);
   background: rgba(0,0,0,0.05);
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: var(--radius-sm);
   font-family: var(--font-display);
+  margin-left: 2px;
 }
 
 .controls-hint .divider {
-  opacity: 0.3;
+  opacity: 0.35;
 }
 
 .text-center {
@@ -1114,6 +1115,57 @@ body, html {
   min-width: 3.2em;
   text-align: right;
   color: var(--color-slate-light);
+}
+
+.escape-controls-panel {
+  text-align: left;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(46, 59, 78, 0.04);
+  border: 1px solid rgba(46, 59, 78, 0.08);
+}
+
+.escape-controls-panel .course-label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.escape-controls-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.escape-controls-list > div {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.88rem;
+}
+
+.escape-controls-list dt {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-slate);
+}
+
+.escape-controls-list dd {
+  margin: 0;
+  color: var(--color-slate-light);
+  font-weight: 500;
+}
+
+.escape-controls-list kbd {
+  display: inline-block;
+  color: var(--color-slate);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 0.85em;
+  font-weight: 700;
 }
 
 .escape-menu-actions {

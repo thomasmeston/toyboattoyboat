@@ -1,7 +1,8 @@
 const BOAT_LABELS = {
   standard: 'Wood Sailboat — steady poke, honest wind',
   cutter: 'Sloop — loves a breeze, hates a rock',
-  pirate: 'Small Ship — hard to sink, harder to turn',
+  pirate: 'Schooner — hard to sink, harder to turn',
+  yacht: 'Yacht — painted classic, holds a course',
 };
 
 const STICK_LABELS = {

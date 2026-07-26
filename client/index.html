@@ -112,8 +112,14 @@
                             </div>
                             <div class="option-card" data-boat="pirate" title="Heavy tank · slow turn">
                                 <div class="option-preview"></div>
-                                <span>Ship</span>
+                                <span>Schooner</span>
                                 <small class="option-flavor">Hard to sink. Harder to turn.</small>
+                            </div>
+
+                            <div class="option-card" data-boat="yacht" title="Steady classic · sturdy hull">
+                                <div class="option-preview"></div>
+                                <span>Yacht</span>
+                                <small class="option-flavor">Painted classic. Holds a course.</small>
                             </div>
                         </div>
                     </div>
@@ -206,21 +212,11 @@
             <!-- Bottom bar controls -->
             <div class="hud-row hud-bottom">
                 <div class="controls-hint glass-card-mini">
-                    <span>Left: <strong>A</strong>/<strong>←</strong></span>
-                    <span class="divider">|</span>
-                    <span>Right: <strong>D</strong>/<strong>→</strong></span>
-                    <span class="divider">|</span>
-                    <span>Steer boat: <strong>A</strong>/<strong>D</strong> in Follow Boat</span>
-                    <span class="divider">|</span>
-                    <span>Push: <strong>Click boat</strong> (or <strong>Space</strong> while aimed)</span>
-                    <span class="divider">|</span>
-                    <span>Lasso: <strong>E</strong></span>
-                    <span class="divider">|</span>
-                    <span>Orbit: <strong>Right-drag</strong></span>
-                    <span class="divider">|</span>
-                    <span>Menu: <strong>Esc</strong></span>
-                    <span class="divider">|</span>
-                    <span>Dev: <strong>~</strong></span>
+                    <span>Move <strong>A</strong><strong>D</strong></span>
+                    <span class="divider">·</span>
+                    <span>Push <strong>Click</strong></span>
+                    <span class="divider">·</span>
+                    <span>Menu <strong>Esc</strong></span>
                 </div>
 
                 <div class="camera-toggle-container view-options" role="group" aria-label="View options">
@@ -272,6 +268,20 @@
                         <input type="range" id="sfx-volume" min="0" max="100" step="1" value="28">
                         <span id="sfx-volume-label" class="escape-volume-value">28%</span>
                     </div>
+                </div>
+
+                <div class="escape-controls-panel">
+                    <span class="course-label">Controls</span>
+                    <dl class="escape-controls-list">
+                        <div><dt>Move / steer</dt><dd><kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd></dd></div>
+                        <div><dt>Push boat</dt><dd>Click boat · <kbd>Space</kbd> while aimed</dd></div>
+                        <div><dt>Lasso</dt><dd><kbd>E</kbd></dd></div>
+                        <div><dt>Camera orbit</dt><dd>Right-drag</dd></div>
+                        <div><dt>Reset camera</dt><dd>Middle-click ×2</dd></div>
+                        <div><dt>Cycle view</dt><dd><kbd>V</kbd></dd></div>
+                        <div><dt>Pause menu</dt><dd><kbd>Esc</kbd></dd></div>
+                        <div><dt>Dev mode</dt><dd><kbd>~</kbd></dd></div>
+                    </dl>
                 </div>
 
                 <div class="escape-map-panel">

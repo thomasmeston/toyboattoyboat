@@ -17,6 +17,9 @@ import { DEFAULT_MAP_ID, getMap, listMaps, normalizeMapId } from '../../shared/m
 
 const WALK_SPEED = 0.006; // rad per frame-unit when holding A/D
 const MAP_STORAGE_KEY = 'tbtb-map';
+const DEFAULT_FOLLOW_PITCH = (20 * Math.PI) / 180; // 20° above horizontal
+/** Stick extend duration — keep in sync with ChildAvatar POKE_MS */
+const POKE_ANIM_SEC = 0.42;
 
 export class Game {
   constructor() {
@@ -37,22 +40,30 @@ export class Game {
     this.ambients = new AmbientBeds();
     this.sfx = new Sfx();
     this.sfx.setVolume(this.ambients.volume);
-    this._boatBow = new THREE.Vector3();
     this._boatLook = new THREE.Vector3();
-    this._physFwd = new THREE.Vector3();
-    this._boatAxisX = new THREE.Vector3();
-    this._boatAxisZ = new THREE.Vector3();
 
     // Orbit / zoom around the local player (follow mode)
     this.camYawOffset = 0; // 0 = outside the rim, behind the child
     this.camBoatYawOffset = 0; // 0 = directly aft of the boat
+    this.camPitch = DEFAULT_FOLLOW_PITCH;
     this.camDistance = 36;
     this.camHeight = 16;
     this._snapCameraOnce = false;
     this._orbitDragging = false;
     this._lastPointerX = 0;
+    this._lastPointerY = 0;
+    this._lastMiddleClickAt = 0;
+    this._defaultCam = {
+      yawOffset: 0,
+      boatYawOffset: 0,
+      pitch: DEFAULT_FOLLOW_PITCH,
+      distance: 36,
+      height: 16,
+    };
     this.keys = { left: false, right: false };
     this._steerDir = 0;
+    this._steerLean = 0; // visual bank while holding rudder (rad)
+    this._steerYaw = 0; // slight nose yaw into the turn (rad)
     this.raycaster = new THREE.Raycaster();
     this._pointerNdc = new THREE.Vector2();
     this._cursorClient = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.55 };
@@ -83,6 +94,7 @@ export class Game {
     this.obstacleMeshes = {};
     this.windSock = null; // { root, sleeve, island } — Paris island marker
     this.wind = { angle: 0, speed: 5, phase: 'breeze' };
+    this.ambientBoats = [];
     this._lastWindPhase = 'breeze';
     this.courseCatalog = [];
     this.activeCourse = null; // { courseId, ringOrder, nextIndex, startedAtMs }
@@ -167,6 +179,7 @@ export class Game {
     const subtitle = document.querySelector('.escape-menu-subtitle');
     if (subtitle) subtitle.textContent = map.subtitle || map.name;
 
+    this.music?.setForMap(map);
     this.syncMapSelectorUI();
   }
 
@@ -237,19 +250,44 @@ export class Game {
     const boat = this.localId ? this.boatMeshes[this.localId] : null;
 
     if (this.activeCameraMode === 'follow') {
-      // Orbit pivot = player on the rim; lookAt stays on the child
+      // Orbit pivot = sailor; lookAt stays on sailor so pitch / tilt do not change
       const rim = this.pathPos(this.playerAngle);
       const px = avatar ? avatar.position.x : rim.x;
       const pz = avatar ? avatar.position.z : rim.z;
       const lookY = 2.4;
-      const camAngle = this.playerAngle + this.camYawOffset;
 
-      const targetCamX = px + Math.cos(camAngle) * this.camDistance;
-      const targetCamZ = pz + Math.sin(camAngle) * this.camDistance;
-      const targetCamY = this.camHeight;
+      // Walking: yaw-only auto-orbit so camera–sailor–boat align (boat on screen-center X)
+      const walking =
+        !this.menuOpen
+        && !this._orbitDragging
+        && (this.keys.left || this.keys.right);
+      if (walking) {
+        const data = this.localId ? this.boatsData[this.localId] : null;
+        const spawn = this.waterSpawnPos(this.playerAngle, 8);
+        const bx = boat ? boat.position.x : (data?.x ?? spawn.x);
+        const bz = boat ? boat.position.z : (data?.y ?? spawn.z);
+        const boatAngle = Math.atan2(bz - pz, bx - px);
+        let desiredOffset = boatAngle + Math.PI - this.playerAngle;
+        while (desiredOffset > Math.PI) desiredOffset -= Math.PI * 2;
+        while (desiredOffset < -Math.PI) desiredOffset += Math.PI * 2;
+        let diff = desiredOffset - this.camYawOffset;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.camYawOffset += diff * 0.14;
+      }
+
+      const camAngle = this.playerAngle + this.camYawOffset;
+      const pitch = THREE.MathUtils.clamp(this.camPitch, 0.12, 1.25);
+      this.camPitch = pitch;
+      const horiz = Math.cos(pitch) * this.camDistance;
+
+      const targetCamX = px + Math.cos(camAngle) * horiz;
+      const targetCamZ = pz + Math.sin(camAngle) * horiz;
+      const targetCamY = lookY + Math.sin(pitch) * this.camDistance;
+      this.camHeight = targetCamY;
 
       const snap = this._snapCameraOnce;
-      const lerp = snap ? 1 : 0.18;
+      const lerp = snap ? 1 : 0.22;
       this.camera.position.x += (targetCamX - this.camera.position.x) * lerp;
       this.camera.position.y += (targetCamY - this.camera.position.y) * lerp;
       this.camera.position.z += (targetCamZ - this.camera.position.z) * lerp;
@@ -257,47 +295,52 @@ export class Game {
 
       this.camera.lookAt(px, lookY, pz);
     } else if (this.activeCameraMode === 'followBoat') {
-      // Stern chase with optional right-drag orbit; yaw eases back to aft when released
+      // Stern chase: sit directly aft of the visual hull, look toward the bow.
+      // Boat models use local +X as bow; with rotation.y = θ that is (cos θ, -sin θ).
       const data = this.localId ? this.boatsData[this.localId] : null;
       const spawn = this.waterSpawnPos(this.playerAngle, 8);
-      const bx = boat ? boat.position.x : spawn.x;
-      const bz = boat ? boat.position.z : spawn.z;
+      const bx = boat ? boat.position.x : (data?.x ?? spawn.x);
+      const bz = boat ? boat.position.z : (data?.y ?? spawn.z);
       const by = boat ? boat.position.y : 0;
+      // Prefer live mesh yaw so the camera tracks the hull you see when steering
+      const heading = Number.isFinite(boat?.rotation.y)
+        ? boat.rotation.y
+        : (data?.angle ?? this.playerAngle + Math.PI);
 
-      if (!this._orbitDragging) {
-        this.camBoatYawOffset += (0 - this.camBoatYawOffset) * 0.14;
-        if (Math.abs(this.camBoatYawOffset) < 0.002) this.camBoatYawOffset = 0;
+      if (!this._orbitDragging) this.camBoatYawOffset = 0;
+
+      // Visual bow is local −X on these hulls (local +X faces the stern)
+      let bowX = -Math.cos(heading);
+      let bowZ = Math.sin(heading);
+      const yaw = this.camBoatYawOffset;
+      if (yaw !== 0) {
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        const rx = bowX * c - bowZ * s;
+        const rz = bowX * s + bowZ * c;
+        bowX = rx;
+        bowZ = rz;
       }
 
-      const bow = this.getBoatBowDirection(boat, data);
-      const dist = Math.max(9, this.camDistance * 0.4);
-      const height = Math.max(3.2, this.camHeight * 0.32);
+      const dist = THREE.MathUtils.clamp(this.camDistance * 0.38, 10, 26);
+      const height = 4.5 + THREE.MathUtils.clamp((this.camDistance - 36) * 0.05, -1.2, 2.5);
 
-      const yaw = this.camBoatYawOffset;
-      const cosY = Math.cos(yaw);
-      const sinY = Math.sin(yaw);
-      // Rotate aft of bow by yaw so right-drag orbits around the hull
-      const aftX = -(bow.x * cosY - bow.z * sinY);
-      const aftZ = -(bow.x * sinY + bow.z * cosY);
-
-      const targetCamX = bx + aftX * dist;
-      const targetCamZ = bz + aftZ * dist;
+      // Directly behind the stern
+      const targetCamX = bx - bowX * dist;
+      const targetCamZ = bz - bowZ * dist;
       const targetCamY = by + height;
 
-      const snap = this._snapCameraOnce;
-      const lerp = snap ? 1 : 0.28;
-      this.camera.position.x += (targetCamX - this.camera.position.x) * lerp;
-      this.camera.position.y += (targetCamY - this.camera.position.y) * lerp;
-      this.camera.position.z += (targetCamZ - this.camera.position.z) * lerp;
-      if (snap) this._snapCameraOnce = false;
+      // Hard-lock to the stern while steering; soften only during right-drag orbit
+      if (this._snapCameraOnce || !this._orbitDragging) {
+        this.camera.position.set(targetCamX, targetCamY, targetCamZ);
+        this._snapCameraOnce = false;
+      } else {
+        this.camera.position.x += (targetCamX - this.camera.position.x) * 0.25;
+        this.camera.position.y += (targetCamY - this.camera.position.y) * 0.25;
+        this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.25;
+      }
 
-      // Pivot on the boat while orbiting; bias look down the bow when near stern
-      const sternBlend = Math.max(0, Math.cos(yaw));
-      this._boatLook.set(
-        bx + bow.x * 10 * sternBlend,
-        by + 1.15,
-        bz + bow.z * 10 * sternBlend,
-      );
+      this._boatLook.set(bx + bowX * 8, by + 1.2, bz + bowZ * 8);
       this.camera.lookAt(this._boatLook);
     } else {
       // Bird's-eye overview of the whole basin
@@ -311,40 +354,16 @@ export class Game {
     }
   }
 
-  /**
-   * World-space bow direction on XZ, taken from the boat mesh axes
-   * (models may face +X or ±Z) aligned to physics heading.
-   */
-  getBoatBowDirection(boat, data) {
-    const angle = data?.angle ?? boat?.rotation.y ?? (this.playerAngle + Math.PI);
-    this._physFwd.set(Math.cos(angle), 0, Math.sin(angle));
-
-    if (!boat) {
-      return this._boatBow.copy(this._physFwd);
-    }
-
-    boat.updateMatrixWorld(true);
-    const e = boat.matrixWorld.elements;
-    // Local +X and +Z projected onto the water plane
-    const xAxis = this._boatAxisX.set(e[0], 0, e[2]);
-    const zAxis = this._boatAxisZ.set(e[8], 0, e[10]);
-    if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0);
-    if (zAxis.lengthSq() < 1e-8) zAxis.set(0, 0, 1);
-    xAxis.normalize();
-    zAxis.normalize();
-
-    const useZ = Math.abs(zAxis.dot(this._physFwd)) > Math.abs(xAxis.dot(this._physFwd));
-    this._boatBow.copy(useZ ? zAxis : xAxis);
-    if (this._boatBow.dot(this._physFwd) < 0) this._boatBow.negate();
-    return this._boatBow;
-  }
-
   setCameraMode(mode) {
     if (!this._cameraModes.includes(mode)) return;
+    const prev = this.activeCameraMode;
     this.activeCameraMode = mode;
     if (mode === 'follow') {
       // Default: behind the child, outside the rim, looking at them
-      this.camYawOffset = 0;
+      if (prev !== 'follow') {
+        this.camYawOffset = 0;
+        this.camPitch = DEFAULT_FOLLOW_PITCH;
+      }
       this._snapCameraOnce = true;
     } else if (mode === 'followBoat') {
       this.camBoatYawOffset = 0; // snap to true aft on enter
@@ -368,6 +387,17 @@ export class Game {
     const idx = this._cameraModes.indexOf(this.activeCameraMode);
     const next = this._cameraModes[(idx + 1) % this._cameraModes.length];
     this.setCameraMode(next);
+  }
+
+  /** Restore orbit/zoom to the default Follow Player / Follow Boat framing. */
+  resetCameraView() {
+    const d = this._defaultCam;
+    this.camYawOffset = d.yawOffset;
+    this.camBoatYawOffset = d.boatYawOffset;
+    this.camPitch = d.pitch;
+    this.camDistance = d.distance;
+    this.camHeight = d.height;
+    this._snapCameraOnce = true;
   }
 
   syncCameraButtons() {
@@ -473,6 +503,7 @@ export class Game {
         this.scene.remove(this.obstacleMeshes[id]);
       }
       this.obstacleMeshes = {};
+      this.ambientBoats = [];
       this.activeCourse = null;
       this._courseNextRingId = null;
       this.populateCourseSelect(data.courses || []);
@@ -500,6 +531,7 @@ export class Game {
 
       Promise.all(
         (data.obstacles || []).map(async (obs) => {
+          if (obs.noMesh) return null;
           const mesh = await createObstacleMesh(obs.type, obs.radius, { facing: obs.facing });
           mesh.position.set(obs.x, mesh.position.y, obs.y);
           mesh.userData.obstacleId = obs.id;
@@ -539,6 +571,7 @@ export class Game {
         this.sfx?.playGust();
       }
       this._lastWindPhase = phase;
+      if (data.ambient) this.ambientBoats = data.ambient;
       this.updateWindVaneHUD();
 
       if (data.avatars) {
@@ -723,7 +756,11 @@ export class Game {
     // 2. Spawn animated child avatar (Meshy boy/girl, or Henry fallback)
     const characterType = custom.characterType || 'boy';
     const avatarColor = isLocal ? 0xffdfd0 : 0xe6caa4;
-    const controller = await createAnimatedChildAvatar(characterType, avatarColor);
+    const controller = await createAnimatedChildAvatar(characterType, {
+      skinTint: avatarColor,
+      clothesColor: custom.clothesColor || null,
+      clothesAccent: custom.clothesAccent || null,
+    });
     if (!this.boatMeshes[id]) {
       controller.dispose();
       return;
@@ -744,10 +781,13 @@ export class Game {
 
     // Snap follow camera onto the new local child
     if (isLocal) {
+      const pitch = THREE.MathUtils.clamp(this.camPitch ?? DEFAULT_FOLLOW_PITCH, 0.12, 1.25);
+      const horiz = Math.cos(pitch) * this.camDistance;
+      const yaw = this.playerAngle + this.camYawOffset;
       this.camera.position.set(
-        px + Math.cos(this.playerAngle + this.camYawOffset) * this.camDistance,
-        this.camHeight,
-        pz + Math.sin(this.playerAngle + this.camYawOffset) * this.camDistance,
+        px + Math.cos(yaw) * horiz,
+        2.4 + Math.sin(pitch) * this.camDistance,
+        pz + Math.sin(yaw) * horiz,
       );
       this.camera.lookAt(px, 2.4, pz);
     }
@@ -1004,9 +1044,10 @@ export class Game {
       document.getElementById('start-screen').classList.remove('active');
       document.getElementById('hud').classList.add('active');
 
-      this._menuPreviews?.stop();
-      this._menuPreviews = null;
+      // Pause (don't destroy) lobby WebGL previews — recreating them blanks the game canvas
+      this._menuPreviews?.pause();
 
+      this.music.setForMap(this.selectedMapId);
       this.music.start();
       this.ambients.start();
       this.sfx.start();
@@ -1087,22 +1128,46 @@ export class Game {
     });
 
     // 10. Pointer: click = stick push; right-drag / Alt-drag orbits; scroll zooms
+    const isUiTarget = (target) =>
+      !!target?.closest?.(
+        'button, input, select, textarea, a, label, #sink-screen, #start-screen, #escape-menu, #dev-panel',
+      );
+
     window.addEventListener('pointerdown', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
       if (this.menuOpen) return;
-      if (e.target.closest('#hud') || e.target.closest('#sink-screen') || e.target.closest('#start-screen') || e.target.closest('#escape-menu') || e.target.closest('#dev-panel')) return;
+      if (isUiTarget(e.target)) return;
 
-      if (e.button === 2 || e.altKey) {
-        this._orbitDragging = true;
-        this._lastPointerX = e.clientX;
+      // Double middle-click (mouse wheel button) resets camera framing
+      if (e.button === 1) {
+        const now = performance.now();
+        if (now - this._lastMiddleClickAt < 350) {
+          this.resetCameraView();
+          this._lastMiddleClickAt = 0;
+        } else {
+          this._lastMiddleClickAt = now;
+        }
         e.preventDefault();
         return;
       }
 
-      if (e.button === 0) {
+      if ((e.button === 2 || e.altKey) && this.activeCameraMode !== 'overview') {
+        this._orbitDragging = true;
+        this._lastPointerX = e.clientX;
+        this._lastPointerY = e.clientY;
+        e.preventDefault();
+        return;
+      }
+
+      if (e.button === 0 && !e.altKey) {
         // Left click = aimed stick push (raycast onto own boat when possible)
         this.emitPokeBoat(e.clientX, e.clientY);
       }
+    });
+
+    // Block browser autoscroll / middle-click paste on the game surface
+    window.addEventListener('auxclick', (e) => {
+      if (e.button === 1 && !isUiTarget(e.target)) e.preventDefault();
     });
 
     window.addEventListener('pointermove', (e) => {
@@ -1110,33 +1175,49 @@ export class Game {
       this._cursorClient.y = e.clientY;
       this.updateCursorAim();
 
-      if (this._orbitDragging && this.activeCameraMode === 'follow') {
-        const dx = e.clientX - this._lastPointerX;
-        this._lastPointerX = e.clientX;
-        this.camYawOffset += dx * 0.005;
-      } else if (this._orbitDragging && this.activeCameraMode === 'followBoat') {
-        const dx = e.clientX - this._lastPointerX;
-        this._lastPointerX = e.clientX;
+      if (!this._orbitDragging) return;
+      if (!e.altKey && (e.buttons & 2) === 0 && (e.buttons & 1) === 0) {
+        this._orbitDragging = false;
+        return;
+      }
+
+      const dx = e.clientX - this._lastPointerX;
+      const dy = e.clientY - this._lastPointerY;
+      this._lastPointerX = e.clientX;
+      this._lastPointerY = e.clientY;
+
+      if (this.activeCameraMode === 'follow') {
+        this.camYawOffset += dx * 0.0065;
+        // Pitch stays put while walking (auto-orbit is yaw-only)
+        if (!(this.keys.left || this.keys.right)) {
+          this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, 0.12, 1.25);
+        }
+      } else if (this.activeCameraMode === 'followBoat') {
         this.camBoatYawOffset += dx * 0.005;
       }
     });
 
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointerup', (e) => {
+      if (e.button === 2 || e.buttons === 0) this._orbitDragging = false;
+    });
+    window.addEventListener('pointercancel', () => {
       this._orbitDragging = false;
     });
 
     window.addEventListener('contextmenu', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
-      if (e.target.closest('#hud')) return;
+      if (isUiTarget(e.target)) return;
       e.preventDefault();
     });
 
     window.addEventListener('wheel', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
       if (this.activeCameraMode === 'overview') return;
-      if (e.target.closest('#hud') || e.target.closest('#sink-screen')) return;
+      if (isUiTarget(e.target)) return;
       this.camDistance = Math.min(90, Math.max(16, this.camDistance + e.deltaY * 0.04));
-      this.camHeight = Math.max(10, this.camDistance * 0.42);
+      if (this.activeCameraMode === 'followBoat') {
+        this.camHeight = Math.max(10, this.camDistance * 0.42);
+      }
     }, { passive: true });
   }
 
@@ -1282,6 +1363,8 @@ export class Game {
     this.keys.left = false;
     this.keys.right = false;
     this._steerDir = 0;
+    this._steerLean = 0;
+    this._steerYaw = 0;
     this._orbitDragging = false;
 
     this.socket?.emit('steerBoat', { dir: 0 });
@@ -1306,8 +1389,12 @@ export class Game {
       dmgBar.style.background = '';
     }
 
-    this._menuPreviews?.stop();
-    this._menuPreviews = startMenuPreviews();
+    // Resume existing lobby previews (never recreate — that loses the main WebGL context)
+    if (this._menuPreviews) {
+      this._menuPreviews.resume();
+    } else {
+      this._menuPreviews = startMenuPreviews();
+    }
   }
 
   setMenuOpen(open) {
@@ -1414,7 +1501,7 @@ export class Game {
     const isParis = mapId === 'paris_fountain' || this.map?.sceneryKey === 'paris';
     if (!isParis) return;
 
-    const list = spawned || [];
+    const list = (spawned || []).filter(Boolean);
     const host =
       list.find(({ obs }) => obs.type === 'island')
       || list.find(({ obs }) => obs.type === 'lighthouse')
@@ -1436,6 +1523,30 @@ export class Game {
       sleeve: sock.userData.sleeve,
     };
     this.updateWindSock(true);
+  }
+
+  /**
+   * Boat pennant streams downwind (same convention as wind sock).
+   * Flag local +X; world yaw ≈ boat.yaw + flag.yaw → −wind.angle.
+   */
+  updateBoatFlag(mesh, time, id) {
+    let flag = mesh.userData.boatFlag;
+    if (!flag) {
+      flag = mesh.getObjectByName('BoatFlag');
+      if (!flag) return;
+      mesh.userData.boatFlag = flag;
+    }
+    const targetYaw = -(this.wind.angle || 0) - mesh.rotation.y;
+    let diff = targetYaw - flag.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    flag.rotation.y += diff * 0.16;
+
+    const flutter = Math.min(0.14, (this.wind.speed || 0) * 0.012)
+      * (this.wind.phase === 'gust' ? 1.6 : this.wind.phase === 'lull' ? 0.4 : 1);
+    const phase = time * 10 + (id?.charCodeAt?.(0) || 0);
+    flag.rotation.z = Math.sin(phase) * flutter;
+    flag.rotation.x = Math.cos(phase * 0.7) * flutter * 0.35;
   }
 
   /**
@@ -1617,7 +1728,7 @@ export class Game {
       updateCenterFountain(this.centerFountain, time);
     }
     if (this.mapWorld) {
-      updateMapAmbience(this.mapWorld, time);
+      updateMapAmbience(this.mapWorld, time, this.ambientBoats);
     }
     this.updateWindSock();
     // Wind dial tracks rim walk / facing every frame (not only on network wind ticks)
@@ -1687,13 +1798,31 @@ export class Game {
           mesh.position.y += (bobHeight - mesh.position.y) * 0.15;
           mesh.position.z += (data.y - mesh.position.z) * 0.4;
 
-          let angleDiff = data.angle - mesh.rotation.y;
+          // Rudder feel: subtle heel + slight nose yaw into the turn (local boat only)
+          if (id === this.localId) {
+            const targetLean = this._steerDir * 0.12; // A/left → port, D/right → starboard
+            const targetYaw = -this._steerDir * 0.08; // rotate slightly into the turn
+            this._steerLean += (targetLean - this._steerLean) * 0.14;
+            this._steerYaw += (targetYaw - this._steerYaw) * 0.14;
+          }
+          const steerLean = id === this.localId ? this._steerLean : 0;
+          const steerYaw = id === this.localId ? this._steerYaw : 0;
+
+          let angleDiff = data.angle + steerYaw - mesh.rotation.y;
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
           while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-          mesh.rotation.y += angleDiff * 0.35;
+          // Follow Boat needs instant yaw so the stern camera stays locked while steering
+          const yawLerp = (id === this.localId && this.activeCameraMode === 'followBoat')
+            ? 1
+            : 0.35;
+          mesh.rotation.y += angleDiff * yawLerp;
 
-          mesh.rotation.x = tiltX;
+          // YXZ: yaw, heel around length (X), pitch bob around beam (Z)
+          mesh.rotation.order = 'YXZ';
+          mesh.rotation.x = tiltX + steerLean;
           mesh.rotation.z = tiltZ;
+
+          this.updateBoatFlag(mesh, time, id);
         }
       }
     }
@@ -1779,8 +1908,8 @@ export class Game {
 
           let scaleZ = restScale;
           if (this.pokeAnimations[id] !== undefined) {
-            const animProgress = this.pokeAnimations[id];
-            this.pokeAnimations[id] += 0.08;
+            this.pokeAnimations[id] += dt;
+            const animProgress = this.pokeAnimations[id] / POKE_ANIM_SEC;
             const t = Math.sin(Math.min(animProgress, 1) * Math.PI);
             scaleZ = restScale + t * (reachScale - restScale);
             if (animProgress >= 1.0) delete this.pokeAnimations[id];
