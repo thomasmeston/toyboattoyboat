@@ -21,9 +21,11 @@ export const DEFAULT_MAP_ID = 'paris_fountain';
 export const MAPS = {
   paris_fountain: {
     id: 'paris_fountain',
-    name: 'Paris Fountain',
-    subtitle: 'Dimanche au parc',
-    blurb: 'Circular park basin',
+    name: 'Jardin du Luxembourg, Paris',
+    shortName: 'Jardin du Luxembourg',
+    location: 'Paris',
+    subtitle: 'Paris',
+    blurb: 'Paris',
     water: { rx: 100, rz: 100 },
     path: { rx: 104.5, rz: 104.5 },
     centerHazardRadius: 20,
@@ -47,9 +49,11 @@ export const MAPS = {
   },
   conservatory_water: {
     id: 'conservatory_water',
-    name: 'Conservatory Water',
-    subtitle: 'Central Park · NYC',
-    blurb: 'Central Park model boat pond',
+    name: 'Conservatory Water Lake, New York',
+    shortName: 'Conservatory Water Lake',
+    location: 'New York',
+    subtitle: 'New York',
+    blurb: 'New York',
     water: { rx: 120, rz: 95 },
     path: { rx: 124.5, rz: 99.5 },
     centerHazardRadius: 0,
@@ -58,7 +62,7 @@ export const MAPS = {
     paletteHint: 'nyc',
     ambientKey: 'park',
     musicFile: 'central-park-drift.mp3',
-    fog: { near: 140, far: 380, color: 0xe8eef5 },
+    fog: { near: 150, far: 460, color: 0xe8eef5 },
     obstaclePlan: {
       solids: 14,
       rings: 6,
@@ -73,9 +77,11 @@ export const MAPS = {
   },
   echo_park_lake: {
     id: 'echo_park_lake',
-    name: 'Echo Park Lake',
+    name: 'Echo Park Lake, Los Angeles',
+    shortName: 'Echo Park Lake',
+    location: 'Los Angeles',
     subtitle: 'Los Angeles',
-    blurb: 'LA swan-boat lake',
+    blurb: 'Los Angeles',
     // ~1.25× prior basin (was 140×110)
     water: { rx: 175, rz: 137.5 },
     path: { rx: 180.625, rz: 143.125 },
@@ -122,6 +128,8 @@ export function mapPayload(mapId) {
   return {
     id: m.id,
     name: m.name,
+    shortName: m.shortName,
+    location: m.location,
     subtitle: m.subtitle,
     water: { ...m.water },
     path: { ...m.path },

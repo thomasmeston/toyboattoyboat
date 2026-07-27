@@ -14,9 +14,12 @@ const DEFAULT_TARGET_HEIGHT = 24;
 export function createCenterFountain(opts = {}) {
   const url = opts.url || PARIS_FOUNTAIN_URL;
   const targetHeight = opts.targetHeight ?? DEFAULT_TARGET_HEIGHT;
+  // Sink so the lowest stone tier sits under the water plane
+  const baseSink = opts.baseSink ?? 2.6;
 
   const group = new THREE.Group();
   group.name = opts.name || 'CenterFountain';
+  group.position.y = -baseSink;
 
   const pedestal = buildProceduralFountainBase();
   group.add(pedestal);

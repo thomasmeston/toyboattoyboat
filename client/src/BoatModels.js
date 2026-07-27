@@ -4,6 +4,7 @@ import {
   createClassicFoldBoat,
   createCutterBoat,
   createGalleonBoat,
+  createFlagSymbolTexture,
 } from './Assets.js';
 import { assetUrl } from './assetUrl.js';
 
@@ -147,10 +148,12 @@ export async function createWoodBoat(boatType, hullColor, flagColor, flagSymbol 
     const flagPivot = new THREE.Group();
     flagPivot.name = 'BoatFlag';
     flagPivot.position.set(0.05, mastTipY, 0);
+    const flagMap = createFlagSymbolTexture(flagColor, flagSymbol, 128);
     const flag = new THREE.Mesh(
       new THREE.PlaneGeometry(0.55, 0.35),
       new THREE.MeshStandardMaterial({
-        color: flagColor,
+        map: flagMap,
+        color: 0xffffff,
         roughness: 0.85,
         side: THREE.DoubleSide,
       }),

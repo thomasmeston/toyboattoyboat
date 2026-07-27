@@ -4,12 +4,15 @@
  * Poke options: Mixkit whoosh / tap / pop / tick / soft hit — https://mixkit.co
  * Gust: Mixkit "Storm wind" — https://mixkit.co (Mixkit License)
  * Ring score: Mixkit flute / glitter / coin / bonus / chime — https://mixkit.co
+ * Duck quack: BigSoundBank "Ducks" (CC0) — https://bigsoundbank.com/ducks-s0276.html
+ *   trimmed soft one-shot for boat pass-through
  */
 
 import { assetUrl } from './assetUrl.js';
 
 const FOOTSTEPS_URL = assetUrl('audio/footsteps-run.mp3');
 const GUST_URL = assetUrl('audio/wind-gust.mp3');
+const QUACK_URL = assetUrl('audio/duck-quack.mp3');
 
 export const POKE_OPTIONS = [
   { id: 'whoosh', label: 'Soft whoosh (stick swing)', file: 'poke-opt-whoosh.mp3' },
@@ -100,6 +103,7 @@ export class Sfx {
       RING_SCORE_OPTIONS.map((o) => [o.id, makePool(assetUrl(`audio/${o.file}`), 3)]),
     );
     this._gustPool = makePool(GUST_URL, 2);
+    this._quackPool = makePool(QUACK_URL, 3);
   }
 
   get pokeId() {
@@ -153,6 +157,7 @@ export class Sfx {
       ...Object.values(this._pokePools).flat(),
       ...Object.values(this._ringPools).flat(),
       ...this._gustPool,
+      ...this._quackPool,
     ];
     for (const a of all) {
       a.muted = true;
@@ -229,6 +234,12 @@ export class Sfx {
     if (!this._started || this._volume <= 0.001) return;
     const pool = this._ringPools[this._ringId] || this._ringPools[DEFAULT_RING];
     this._playFromPool(pool, 0.75, 0.97 + Math.random() * 0.06);
+  }
+
+  /** Soft short quack when a boat brushes a duck. */
+  playQuack() {
+    if (!this._started || this._volume <= 0.001) return;
+    this._playFromPool(this._quackPool, 0.95, 0.92 + Math.random() * 0.16);
   }
 
   /** Preview the currently selected (or given) poke option. */

@@ -3,12 +3,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { createChildAvatar as createProceduralChild } from './Assets.js';
 import { assetUrl } from './assetUrl.js';
+import { IDLE_ARM_POSE } from './avatarIdlePose.js';
 
 /** Quaternius "Henry" (CC0) — https://poly.pizza/m/yEdSk8tRKc */
 const CHARACTERS = {
   boy: {
     modelUrl: assetUrl('models/parisian-boy.glb'),
-    /** Arm rest pose source only — never played as locomotion. */
+    /** Arm rest fallback if the character has no baked pose — never played as locomotion. */
     armPoseUrl: assetUrl('models/parisian-boy-walk.glb'),
     runUrl: assetUrl('models/parisian-boy-run.glb'),
   },
@@ -225,7 +226,7 @@ function prepareScene(scene) {
 /**
  * Run GLB = live mesh + run clip.
  * Base GLB = clip0 body bind (symmetric stand).
- * Walk GLB = arm rest quaternions only (not played).
+ * Walk GLB = fallback arm rest quaternions only (not played).
  */
 async function loadCharacterTemplate(characterType) {
   const key = CHARACTERS[characterType] ? characterType : 'boy';
@@ -286,6 +287,18 @@ function findBone(root, name) {
     if (!found && obj.isBone && obj.name === name) found = obj;
   });
   return found;
+}
+
+/** Baked idle stance from avatarIdlePose.js, as bone -> quaternion. */
+function bakedArmRestPose(characterType) {
+  const baked = IDLE_ARM_POSE[characterType];
+  if (!baked) return null;
+  const pose = {};
+  for (const name of ARM_BONES) {
+    const q = baked[name];
+    if (q) pose[name] = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+  }
+  return Object.keys(pose).length ? pose : null;
 }
 
 /** First-keyframe local quaternions for arm bones from a pose clip. */
@@ -349,10 +362,12 @@ export async function createAnimatedChildAvatar(characterType = 'boy', options =
   );
   const rightHand = bones.RightHand;
 
-  const armRest = extractArmRestPose(
-    template.armPoseClip
-      || pickClip(template.animations, ['walking', 'Walk', 'walk']),
-  );
+  // Baked stance wins; walk-clip frame 0 covers characters with no baked entry.
+  const armRest = bakedArmRestPose(type)
+    || extractArmRestPose(
+      template.armPoseClip
+        || pickClip(template.animations, ['walking', 'Walk', 'walk']),
+    );
 
   if (clothesColor) {
     applyClothesColors(model, clothesColor, clothesAccent);

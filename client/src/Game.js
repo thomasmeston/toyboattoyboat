@@ -70,6 +70,7 @@ export class Game {
     // Water-surface plane (y = 0.35) for stick aim from cursor
     this._aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.35);
     this._cursorAimPoint = new THREE.Vector3(0, 0.35, 0);
+    this._duckWorldPos = new THREE.Vector3();
     this._hasCursorAim = false;
     
     // Customization selections
@@ -80,6 +81,8 @@ export class Game {
       boatColor: '#c4a574',
       flagColor: '#baffc9',
       flagSymbol: 'star',
+      clothesColor: '#3d6fb8',
+      clothesAccent: '#e8a04a',
       stickType: 'wooden',
       stickColor: '#d7a15c'
     };
@@ -176,11 +179,17 @@ export class Game {
     this.scene.background = new THREE.Color(fog.color);
     this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
 
-    const subtitle = document.querySelector('.escape-menu-subtitle');
-    if (subtitle) subtitle.textContent = map.subtitle || map.name;
+    this.syncMapTitleUI(map);
 
     this.music?.setForMap(map);
     this.syncMapSelectorUI();
+  }
+
+  /** Pause subtitle uses the official map name. */
+  syncMapTitleUI(map = null) {
+    const m = map || getMap(this.selectedMapId || this.map?.id || DEFAULT_MAP_ID);
+    const subtitle = document.querySelector('.escape-menu-subtitle');
+    if (subtitle) subtitle.textContent = m.name || 'Map';
   }
 
   initThree() {
@@ -811,6 +820,14 @@ export class Game {
       delete this.avatarControllers[id];
     }
     if (this.avatarMeshes[id]) {
+      // A CSS2DObject only drops its DOM node on its own `removed` event, which
+      // does not fire when an ancestor is removed. Detach name tags explicitly
+      // or they pile up in the label layer on every respawn / map restart.
+      const labels = [];
+      this.avatarMeshes[id].traverse((obj) => {
+        if (obj.isCSS2DObject) labels.push(obj);
+      });
+      labels.forEach((label) => label.removeFromParent());
       this.scene.remove(this.avatarMeshes[id]);
       delete this.avatarMeshes[id];
     }
@@ -927,12 +944,24 @@ export class Game {
     // 4. Color pickers
     const boatColorEl = document.getElementById('boat-color');
     const flagColorEl = document.getElementById('flag-color');
-    boatColorEl.addEventListener('input', (e) => {
+    const clothesColorEl = document.getElementById('clothes-color');
+    const clothesAccentEl = document.getElementById('clothes-accent');
+    boatColorEl?.addEventListener('input', (e) => {
       this.customization.boatColor = e.target.value;
     });
-    flagColorEl.addEventListener('input', (e) => {
+    flagColorEl?.addEventListener('input', (e) => {
       this.customization.flagColor = e.target.value;
     });
+    clothesColorEl?.addEventListener('input', (e) => {
+      this.customization.clothesColor = e.target.value;
+    });
+    clothesAccentEl?.addEventListener('input', (e) => {
+      this.customization.clothesAccent = e.target.value;
+    });
+    if (boatColorEl) this.customization.boatColor = boatColorEl.value;
+    if (flagColorEl) this.customization.flagColor = flagColorEl.value;
+    if (clothesColorEl) this.customization.clothesColor = clothesColorEl.value;
+    if (clothesAccentEl) this.customization.clothesAccent = clothesAccentEl.value;
 
     // 5. Flag symbols
     document.querySelectorAll('#symbol-options .symbol-btn').forEach((btn) => {
@@ -1346,11 +1375,7 @@ export class Game {
     });
     const escapeSel = document.getElementById('escape-map-select');
     if (escapeSel && escapeSel.value !== id) escapeSel.value = id;
-    const subtitle = document.querySelector('.escape-menu-subtitle');
-    if (subtitle) {
-      const m = getMap(id);
-      subtitle.textContent = m.subtitle || m.name;
-    }
+    this.syncMapTitleUI(getMap(id));
   }
 
   /** Leave the session and return to the setup / Set Sail screen. */
@@ -1505,6 +1530,7 @@ export class Game {
     const host =
       list.find(({ obs }) => obs.type === 'island')
       || list.find(({ obs }) => obs.type === 'lighthouse')
+      || list.find(({ obs }) => obs.type === 'boathouse')
       || list.find(({ obs }) => obs.type === 'rock');
     if (!host) {
       console.warn('[windsock] No island host found on Paris map');
@@ -1662,6 +1688,44 @@ export class Game {
     });
   }
 
+  /** Bob and gently rock buoy obstacles on the water. */
+  updateBuoyBob(time) {
+    for (const id in this.obstacleMeshes) {
+      const mesh = this.obstacleMeshes[id];
+      if (!mesh || mesh.userData.kind !== 'buoy') continue;
+      const phase = mesh.userData.bobPhase || 0;
+      const speed = mesh.userData.bobSpeed || 2;
+      const amp = mesh.userData.bobAmp || 0.14;
+      const tilt = mesh.userData.tiltAmp || 0.07;
+      const baseY = mesh.userData.baseY ?? 0.05;
+      const t = time * speed + phase;
+      mesh.position.y = baseY + Math.sin(t) * amp;
+      mesh.rotation.x = Math.sin(t * 0.85) * tilt;
+      mesh.rotation.z = Math.cos(t * 0.7) * tilt;
+    }
+  }
+
+  /** Soft quack when the local boat first brushes a duck. */
+  updateDuckQuacks() {
+    const boat = this.localId ? this.boatMeshes[this.localId] : null;
+    if (!boat || !this.mapWorld || boat.visible === false) return;
+    const bx = boat.position.x;
+    const bz = boat.position.z;
+    const hitR2 = 2.4 * 2.4;
+    this.mapWorld.traverse((obj) => {
+      const kind = obj.userData?.kind;
+      if (kind !== 'duck' && kind !== 'duckMom' && kind !== 'duckling') return;
+      obj.getWorldPosition(this._duckWorldPos);
+      const dx = this._duckWorldPos.x - bx;
+      const dz = this._duckWorldPos.z - bz;
+      const overlapping = dx * dx + dz * dz <= hitR2;
+      if (overlapping && !obj.userData.boatOverlapping) {
+        this.sfx?.playQuack();
+      }
+      obj.userData.boatOverlapping = overlapping;
+    });
+  }
+
   updateCourseRingHighlight(time) {
     const nextId = this._courseNextRingId;
     for (const id in this.obstacleMeshes) {
@@ -1730,6 +1794,8 @@ export class Game {
     if (this.mapWorld) {
       updateMapAmbience(this.mapWorld, time, this.ambientBoats);
     }
+    this.updateBuoyBob(time);
+    this.updateDuckQuacks();
     this.updateWindSock();
     // Wind dial tracks rim walk / facing every frame (not only on network wind ticks)
     this.updateWindVaneHUD();

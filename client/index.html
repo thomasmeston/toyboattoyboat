@@ -70,101 +70,131 @@
                     <h3>Map</h3>
                     <div class="map-options" id="start-map-options" role="group" aria-label="Map">
                         <button type="button" class="map-option-btn active" data-map-id="paris_fountain">
-                            Paris Fountain
-                            <small>Circular park basin</small>
+                            Jardin du Luxembourg
+                            <small>Paris</small>
                         </button>
                         <button type="button" class="map-option-btn" data-map-id="conservatory_water">
-                            Conservatory Water
-                            <small>Central Park model boat pond</small>
+                            Conservatory Water Lake
+                            <small>New York</small>
                         </button>
                         <button type="button" class="map-option-btn" data-map-id="echo_park_lake">
                             Echo Park Lake
-                            <small>LA swan-boat lake</small>
+                            <small>Los Angeles</small>
                         </button>
                     </div>
                 </div>
 
                 <div class="setup-grid">
-                    <div class="setup-section">
-                        <h3>Sailor</h3>
-                        <div class="card-options" id="character-options">
-                            <div class="option-card active" data-character="boy" title="Boy">
-                                <div class="option-preview"></div>
+                    <div class="setup-col">
+                        <div class="setup-section">
+                            <h3>Sailor</h3>
+                            <div class="card-options" id="character-options">
+                                <div class="option-card active" data-character="boy" title="Boy">
+                                    <div class="option-preview option-preview-static">
+                                        <img src="/ui/previews/sailor-boy.png" alt="Boy sailor" width="256" height="256" decoding="async">
+                                    </div>
+                                </div>
+                                <div class="option-card" data-character="girl" title="Girl">
+                                    <div class="option-preview option-preview-static">
+                                        <img src="/ui/previews/sailor-girl.png" alt="Girl sailor" width="256" height="256" decoding="async">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="option-card" data-character="girl" title="Girl">
-                                <div class="option-preview"></div>
+                            <div class="picker-grid clothes-picker-grid">
+                                <label class="picker-card" for="clothes-color">
+                                    <span class="picker-swatch">
+                                        <input type="color" id="clothes-color" value="#3d6fb8" title="Main clothing color">
+                                    </span>
+                                    <span>Outfit</span>
+                                </label>
+                                <label class="picker-card" for="clothes-accent">
+                                    <span class="picker-swatch">
+                                        <input type="color" id="clothes-accent" value="#e8a04a" title="Accent clothing color">
+                                    </span>
+                                    <span>Accent</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setup-section">
+                            <h3>Colors &amp; Flag</h3>
+                            <div class="picker-grid">
+                                <label class="picker-card" for="boat-color">
+                                    <span class="picker-swatch">
+                                        <input type="color" id="boat-color" value="#c4a574">
+                                    </span>
+                                    <span>Hull</span>
+                                </label>
+                                <label class="picker-card" for="flag-color">
+                                    <span class="picker-swatch">
+                                        <input type="color" id="flag-color" value="#baffc9">
+                                    </span>
+                                    <span>Flag</span>
+                                </label>
+                            </div>
+                            <div class="symbol-options" id="symbol-options" role="group" aria-label="Flag symbol">
+                                <div class="symbol-btn active" data-symbol="star" title="Star">★</div>
+                                <div class="symbol-btn" data-symbol="heart" title="Heart">♥</div>
+                                <div class="symbol-btn" data-symbol="anchor" title="Anchor">⚓</div>
+                                <div class="symbol-btn" data-symbol="moon" title="Moon">☾</div>
+                                <div class="symbol-btn" data-symbol="skull" title="Skull and crossbones">☠</div>
+                                <div class="symbol-btn" data-symbol="sun" title="Sun">☀</div>
+                                <div class="symbol-btn" data-symbol="clover" title="Clover">♣</div>
+                                <div class="symbol-btn" data-symbol="diamond" title="Diamond">◆</div>
+                                <div class="symbol-btn" data-symbol="cross" title="Cross">✚</div>
+                                <div class="symbol-btn" data-symbol="sparkle" title="Sparkle">✦</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="setup-section">
-                        <h3>Boat</h3>
-                        <div class="card-options" id="boat-options">
-                            <div class="option-card active" data-boat="standard" title="Balanced speed &amp; hull">
-                                <div class="option-preview"></div>
-                                <span>Sailboat</span>
-                                <small class="option-flavor">Steady poke, honest wind.</small>
-                            </div>
-                            <div class="option-card" data-boat="cutter" title="Fast &amp; windy · fragile">
-                                <div class="option-preview"></div>
-                                <span>Sloop</span>
-                                <small class="option-flavor">Loves a breeze. Hates a rock.</small>
-                            </div>
-                            <div class="option-card" data-boat="pirate" title="Heavy tank · slow turn">
-                                <div class="option-preview"></div>
-                                <span>Schooner</span>
-                                <small class="option-flavor">Hard to sink. Harder to turn.</small>
-                            </div>
-
-                            <div class="option-card" data-boat="yacht" title="Steady classic · sturdy hull">
-                                <div class="option-preview"></div>
-                                <span>Yacht</span>
-                                <small class="option-flavor">Painted classic. Holds a course.</small>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="setup-section">
-                        <h3>Colors &amp; Flag</h3>
-                        <div class="customization-controls customization-controls-inline">
-                            <div class="control-group">
-                                <label for="boat-color">Hull</label>
-                                <div class="color-picker-wrapper">
-                                    <input type="color" id="boat-color" value="#c4a574">
+                    <div class="setup-col">
+                        <div class="setup-section">
+                            <h3>Boat</h3>
+                            <div class="card-options" id="boat-options">
+                                <div class="option-card active" data-boat="standard" title="Balanced speed &amp; hull">
+                                    <div class="option-preview"></div>
+                                    <span>Sailboat</span>
+                                    <small class="option-flavor">Steady poke, honest wind.</small>
                                 </div>
-                            </div>
-                            <div class="control-group">
-                                <label for="flag-color">Flag</label>
-                                <div class="color-picker-wrapper">
-                                    <input type="color" id="flag-color" value="#baffc9">
+                                <div class="option-card" data-boat="cutter" title="Fast &amp; windy · fragile">
+                                    <div class="option-preview"></div>
+                                    <span>Sloop</span>
+                                    <small class="option-flavor">Loves a breeze. Hates a rock.</small>
                                 </div>
-                            </div>
-                            <div class="control-group control-group-symbols">
-                                <label>Symbol</label>
-                                <div class="symbol-options" id="symbol-options">
-                                    <div class="symbol-btn active" data-symbol="star">★</div>
-                                    <div class="symbol-btn" data-symbol="heart">♥</div>
-                                    <div class="symbol-btn" data-symbol="anchor">⚓</div>
-                                    <div class="symbol-btn" data-symbol="moon">☾</div>
+                                <div class="option-card" data-boat="pirate" title="Heavy tank · slow turn">
+                                    <div class="option-preview"></div>
+                                    <span>Schooner</span>
+                                    <small class="option-flavor">Hard to sink. Harder to turn.</small>
+                                </div>
+                                <div class="option-card" data-boat="yacht" title="Steady classic · sturdy hull">
+                                    <div class="option-preview"></div>
+                                    <span>Yacht</span>
+                                    <small class="option-flavor">Painted classic. Holds a course.</small>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="setup-section">
-                        <h3>Pushstick</h3>
-                        <div class="card-options" id="stick-options">
-                            <div class="option-card active" data-stick="wooden" title="Steady all-round poke">
-                                <div class="option-preview"></div>
-                                <span>Hickory</span>
-                            </div>
-                            <div class="option-card" data-stick="brass" title="Powerful · wilder aim">
-                                <div class="option-preview"></div>
-                                <span>Brass</span>
-                            </div>
-                            <div class="option-card" data-stick="ribbon" title="Soft &amp; precise guide">
-                                <div class="option-preview"></div>
-                                <span>Ribbon</span>
+                        <div class="setup-section">
+                            <h3>Pushstick</h3>
+                            <div class="card-options" id="stick-options">
+                                <div class="option-card active" data-stick="wooden" title="Steady all-round poke">
+                                    <div class="option-preview option-preview-static">
+                                        <img src="/ui/previews/stick-wooden.png" alt="Hickory pushstick" width="256" height="256" decoding="async">
+                                    </div>
+                                    <span>Hickory</span>
+                                </div>
+                                <div class="option-card" data-stick="brass" title="Powerful · wilder aim">
+                                    <div class="option-preview option-preview-static">
+                                        <img src="/ui/previews/stick-brass.png" alt="Brass pushstick" width="256" height="256" decoding="async">
+                                    </div>
+                                    <span>Brass</span>
+                                </div>
+                                <div class="option-card" data-stick="ribbon" title="Soft &amp; precise guide">
+                                    <div class="option-preview option-preview-static">
+                                        <img src="/ui/previews/stick-ribbon.png" alt="Ribbon pushstick" width="256" height="256" decoding="async">
+                                    </div>
+                                    <span>Ribbon</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -249,7 +279,7 @@
         <div id="escape-menu" class="overlay-panel">
             <div class="glass-card compact escape-menu-card">
                 <h2 class="escape-menu-title">Paused</h2>
-                <p class="escape-menu-subtitle">Dimanche au parc</p>
+                <p class="escape-menu-subtitle">Jardin du Luxembourg, Paris</p>
 
                 <div class="escape-audio-controls">
                     <label class="escape-mute-row" for="music-mute">
@@ -287,9 +317,9 @@
                 <div class="escape-map-panel">
                     <span class="course-label">Map</span>
                     <select id="escape-map-select" aria-label="Map">
-                        <option value="paris_fountain">Paris Fountain</option>
-                        <option value="conservatory_water">Conservatory Water</option>
-                        <option value="echo_park_lake">Echo Park Lake</option>
+                        <option value="paris_fountain">Jardin du Luxembourg, Paris</option>
+                        <option value="conservatory_water">Conservatory Water Lake, New York</option>
+                        <option value="echo_park_lake">Echo Park Lake, Los Angeles</option>
                     </select>
                     <button type="button" id="btn-change-map" class="btn-secondary course-btn">Switch map</button>
                 </div>

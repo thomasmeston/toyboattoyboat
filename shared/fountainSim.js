@@ -40,7 +40,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
   const STEER_YAW = 0.055; // base yaw rate while holding steer (scaled by turnRate)
   const BOT_TYPES = ['standard', 'cutter', 'pirate', 'yacht'];
   const BOT_CHARS = ['boy', 'girl'];
-  const BOT_SYMBOLS = ['star', 'heart', 'anchor', 'moon'];
+  const BOT_SYMBOLS = ['star', 'heart', 'anchor', 'moon', 'skull', 'sun', 'clover', 'diamond', 'cross', 'sparkle'];
   const BOT_STICKS = ['wooden', 'brass', 'ribbon'];
   const BOT_FIRST = [
     'Lucie', 'Pierre', 'Camille', 'Hugo', 'Léa', 'Louis', 'Chloé', 'Gabriel',
@@ -214,7 +214,25 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     const buoyW = w.buoy ?? 0.15;
     const leafW = w.leaf ?? 0.15;
     // lilypad is remainder
-    for (let i = 0; i < plan.solids; i++) {
+
+    // Paris: exactly two small green boat houses each load
+    let solidIndex = 0;
+    if (map.id === 'paris_fountain') {
+      for (let b = 0; b < 2; b++) {
+        const pos = placeInEllipseBand(plan.solidMin, plan.solidMax, plan.solidClear);
+        if (!pos) continue;
+        obstacles.push({
+          id: `obs_boathouse_${b}`,
+          x: pos.x,
+          y: pos.y,
+          radius: 2.1 + Math.random() * 0.4,
+          type: 'boathouse',
+        });
+        solidIndex += 1;
+      }
+    }
+
+    for (let i = solidIndex; i < plan.solids; i++) {
       const pos = placeInEllipseBand(plan.solidMin, plan.solidMax, plan.solidClear);
       if (!pos) continue;
       const roll = Math.random();
@@ -1177,6 +1195,8 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
         boatColor: data.boatColor || '#ff9999',
         flagColor: data.flagColor || '#9999ff',
         flagSymbol: data.flagSymbol || 'star',
+        clothesColor: data.clothesColor || null,
+        clothesAccent: data.clothesAccent || null,
         stickColor: data.stickColor || '#d7a15c',
         stickType: data.stickType || 'wooden',
       });

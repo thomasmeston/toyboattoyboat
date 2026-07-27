@@ -1,7 +1,5 @@
 import * as THREE from 'three';
-import { createAnimatedChildAvatar } from './ChildAvatar.js';
 import { createWoodBoat } from './BoatModels.js';
-import { createPushstick } from './Assets.js';
 
 const PREVIEW_BG = 0xf3efe6;
 
@@ -54,35 +52,18 @@ function makePreviewSlot(el) {
   return { el, renderer, scene, camera, pivot, spin: 0.45, disposed: false };
 }
 
-async function loadPreviewModel(slot, kind, id) {
-  let object = null;
-  let controller = null;
-
-  if (kind === 'character') {
-    controller = await createAnimatedChildAvatar(id);
-    object = controller.group;
-    controller.setMoving?.(false);
-  } else if (kind === 'boat') {
-    object = await createWoodBoat(id, '#c4a574', '#baffc9', 'star');
-  } else if (kind === 'stick') {
-    object = createPushstick(id);
-    object.scale.setScalar(0.22);
-    object.rotation.x = -0.35;
-    object.rotation.z = 0.15;
-  }
-
-  if (!object || slot.disposed) {
-    controller?.dispose?.();
-    return null;
-  }
+async function loadPreviewModel(slot, id) {
+  const object = await createWoodBoat(id, '#c4a574', '#baffc9', 'star');
+  if (!object || slot.disposed) return null;
 
   slot.pivot.add(object);
-  fitCamera(slot.camera, slot.pivot, kind === 'stick' ? 1.55 : 1.4);
-  return { object, controller };
+  fitCamera(slot.camera, slot.pivot, 1.4);
+  return object;
 }
 
 /**
- * Mount slowly-rotating 3D model previews into intro option cards.
+ * Mount slowly-rotating 3D boat previews into intro option cards. Sailor and
+ * pushstick cards use baked PNGs (client/public/ui/previews) instead.
  * pause/resume avoids recreating WebGL contexts (which blanks the main game canvas).
  */
 export function startMenuPreviews() {
@@ -93,37 +74,20 @@ export function startMenuPreviews() {
   let stopped = false;
   let paused = false;
 
-  const cards = document.querySelectorAll(
-    '#character-options .option-card, #boat-options .option-card, #stick-options .option-card',
-  );
+  const cards = document.querySelectorAll('#boat-options .option-card');
 
   cards.forEach((card) => {
     const preview = card.querySelector('.option-preview');
-    if (!preview) return;
-
-    let kind = null;
-    let id = null;
-    if (card.dataset.character) {
-      kind = 'character';
-      id = card.dataset.character;
-    } else if (card.dataset.boat) {
-      kind = 'boat';
-      id = card.dataset.boat;
-    } else if (card.dataset.stick) {
-      kind = 'stick';
-      id = card.dataset.stick;
-    }
-    if (!kind || !id) return;
+    const id = card.dataset.boat;
+    if (!preview || !id) return;
 
     const slot = makePreviewSlot(preview);
-    slot.kind = kind;
     slot.id = id;
     slots.push(slot);
 
-    loadPreviewModel(slot, kind, id).then((loaded) => {
-      if (!loaded || slot.disposed) return;
-      slot.controller = loaded.controller;
-      slot.object = loaded.object;
+    loadPreviewModel(slot, id).then((object) => {
+      if (!object || slot.disposed) return;
+      slot.object = object;
     });
   });
 
@@ -141,7 +105,6 @@ export function startMenuPreviews() {
     for (const slot of slots) {
       if (slot.disposed) continue;
       slot.pivot.rotation.y += slot.spin * dt;
-      slot.controller?.update?.(dt, now);
       try {
         slot.renderer.render(slot.scene, slot.camera);
       } catch {
@@ -167,7 +130,6 @@ export function startMenuPreviews() {
       cancelAnimationFrame(raf);
       for (const slot of slots) {
         slot.disposed = true;
-        slot.controller?.dispose?.();
         try {
           slot.renderer.forceContextLoss?.();
         } catch {

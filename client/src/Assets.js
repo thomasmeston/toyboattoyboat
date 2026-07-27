@@ -42,6 +42,41 @@ function meshBounds(root) {
   return box;
 }
 
+const FLAG_SYMBOL_GLYPHS = {
+  star: '★',
+  heart: '♥',
+  anchor: '⚓',
+  moon: '☾',
+  skull: '☠',
+  sun: '☀',
+  clover: '♣',
+  diamond: '◆',
+  cross: '✚',
+  sparkle: '✦',
+};
+
+export function flagSymbolGlyph(flagSymbol = 'star') {
+  return FLAG_SYMBOL_GLYPHS[flagSymbol] || FLAG_SYMBOL_GLYPHS.star;
+}
+
+/** Canvas texture of flag color + centered symbol for boat flags. */
+export function createFlagSymbolTexture(flagColor, flagSymbol = 'star', size = 64) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = flagColor;
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.round(size * 0.56)}px Arial, "Segoe UI Symbol", sans-serif`;
+  ctx.fillText(flagSymbolGlyph(flagSymbol), size * 0.5, size * 0.52);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 // 1. Origami Paper Sailboat
 export function createClassicFoldBoat(hullColor, flagColor, flagSymbol = 'star') {
   const group = new THREE.Group();
@@ -138,35 +173,13 @@ export function createClassicFoldBoat(hullColor, flagColor, flagSymbol = 'star')
   flagMesh.castShadow = true;
   group.add(flagMesh);
 
-  // Add Flag Symbol (using canvas drawing mapped to texture for simplified geometric symbols)
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = flagColor;
-  ctx.fillRect(0, 0, 64, 64);
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = 'bold 36px Arial';
-  
-  let symbolText = '★';
-  if (flagSymbol === 'heart') symbolText = '♥';
-  else if (flagSymbol === 'anchor') symbolText = '⚓';
-  else if (flagSymbol === 'moon') symbolText = '☾';
-  
-  ctx.fillText(symbolText, 32, 32);
-
-  const symbolTex = new THREE.CanvasTexture(canvas);
+  // Flag symbol card on the mast flag
   const symbolMat = new THREE.MeshBasicMaterial({
-    map: symbolTex,
+    map: createFlagSymbolTexture(flagColor, flagSymbol),
     transparent: true,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
   });
-  
-  // Tiny overlay card for flag symbol
-  const symbolCardGeo = new THREE.PlaneGeometry(0.4, 0.4);
-  const symbolCard = new THREE.Mesh(symbolCardGeo, symbolMat);
+  const symbolCard = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), symbolMat);
   symbolCard.position.set(-0.3, 2.1, 0.01);
   group.add(symbolCard);
 
@@ -398,8 +411,8 @@ export function createParkBench() {
   const wood = createPaperMaterial(PALETTE.benchWood);
   const iron = createPaperMaterial(0x5a5a5a);
 
-  // Kid scale: sailors are TARGET_HEIGHT 5.5 — seat ~knee height, 2-kid width
-  const seatW = 4.6;
+  // Kid scale: sailors are TARGET_HEIGHT 5.5 — seat ~knee height, longer park bench
+  const seatW = 7.2;
   const seatD = 1.25;
   const seatY = 1.25;
   const seat = new THREE.Mesh(new THREE.BoxGeometry(seatW, 0.22, seatD), wood);
@@ -519,10 +532,128 @@ export function createParkScenery(fountainRadius) {
     group.add(tree);
   }
 
+  // Color flowers along the grass ring outside the walkway
+  group.add(createParkFlowerBeds(fountainRadius));
+
+  // Marble statues on plinths around the grass (here and there)
+  group.add(createParkMarbleStatues(fountainRadius));
+
   // Distant city blocks (sit in fog beyond the grass ring)
   group.add(createDistantBuildings(fountainRadius));
 
   return group;
+}
+
+/** Sporadic flower clusters on the grass ring around the fountain path. */
+function createParkFlowerBeds(fountainRadius) {
+  const group = new THREE.Group();
+  group.name = 'ParkFlowers';
+  const colors = [0xe85a7a, 0xf4c430, 0xd96b9a, 0xf28c28, 0x9b6bdf, 0xf7f4ef, 0xe85a5a];
+  const count = 42;
+  for (let i = 0; i < count; i++) {
+    // Skip some slots so placement feels sporadic, not a full ring
+    if (Math.random() < 0.28) continue;
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const dist = fountainRadius + 18 + Math.random() * 48;
+    const cluster = new THREE.Group();
+    const blooms = 3 + Math.floor(Math.random() * 5);
+    for (let b = 0; b < blooms; b++) {
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const stem = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.05, 0.45 + Math.random() * 0.35, 4),
+        createPaperMaterial(0x5a8f4a),
+      );
+      stem.position.set(
+        (Math.random() - 0.5) * 1.2,
+        0.25,
+        (Math.random() - 0.5) * 1.2,
+      );
+      cluster.add(stem);
+      const bloom = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16 + Math.random() * 0.12, 6, 5),
+        createPaperMaterial(color),
+      );
+      bloom.position.copy(stem.position);
+      bloom.position.y += 0.28;
+      bloom.castShadow = true;
+      cluster.add(bloom);
+    }
+    cluster.position.set(Math.cos(angle) * dist, 0.02, Math.sin(angle) * dist);
+    group.add(cluster);
+  }
+  return group;
+}
+
+/** Papercraft marble statues on stone plinths. */
+function createParkMarbleStatues(fountainRadius) {
+  const group = new THREE.Group();
+  group.name = 'ParkStatues';
+  const placements = [
+    { angle: 0.4, dist: fountainRadius + 32 },
+    { angle: 1.7, dist: fountainRadius + 44 },
+    { angle: 2.9, dist: fountainRadius + 36 },
+    { angle: 4.1, dist: fountainRadius + 48 },
+    { angle: 5.3, dist: fountainRadius + 38 },
+  ];
+  for (const p of placements) {
+    const statue = createMarbleStatue();
+    statue.position.set(Math.cos(p.angle) * p.dist, 0, Math.sin(p.angle) * p.dist);
+    statue.rotation.y = p.angle + Math.PI + (Math.random() - 0.5) * 0.6;
+    const s = 0.85 + Math.random() * 0.35;
+    statue.scale.setScalar(s);
+    group.add(statue);
+  }
+  return group;
+}
+
+function createMarbleStatue() {
+  const g = new THREE.Group();
+  g.name = 'MarbleStatue';
+  const marble = createPaperMaterial(0xe8e4dc);
+  const marbleShade = createPaperMaterial(0xd0ccc4);
+  const plinthMat = createPaperMaterial(0xc8c2b6);
+
+  // Stepped plinth
+  const base = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.7, 3.2), plinthMat);
+  base.position.y = 0.35;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  g.add(base);
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 2.2), marbleShade);
+  plinth.position.y = 1.4;
+  plinth.castShadow = true;
+  g.add(plinth);
+
+  // Stylized figure — torso, head, simple arms
+  const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 2.2, 8), marble);
+  legs.position.y = 3.2;
+  legs.castShadow = true;
+  g.add(legs);
+
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.55, 2.0, 8), marble);
+  torso.position.y = 5.2;
+  torso.castShadow = true;
+  g.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), marble);
+  head.position.y = 6.55;
+  head.castShadow = true;
+  g.add(head);
+
+  // One raised arm / one at side for silhouette variety
+  const armUp = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.8, 6), marble);
+  armUp.position.set(0.85, 5.8, 0.1);
+  armUp.rotation.z = -0.85;
+  armUp.castShadow = true;
+  g.add(armUp);
+
+  const armSide = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.6, 6), marble);
+  armSide.position.set(-0.9, 5.0, 0.15);
+  armSide.rotation.z = 0.35;
+  armSide.castShadow = true;
+  g.add(armSide);
+
+  return g;
 }
 
 /** Ring of soft papercraft Parisian blocks for ambient skyline. */
@@ -762,6 +893,72 @@ function createPaperTree() {
   return createParkTree();
 }
 
+/** Small green boat house on a miniature dock platform (Paris basin props). */
+function createGreenBoatHouse(radius) {
+  const group = new THREE.Group();
+  group.name = 'BoatHouse';
+  const r = radius;
+  const green = createPaperMaterial(0x5a8f62);
+  const greenDark = createPaperMaterial(0x3f6a48);
+  const wood = createPaperMaterial(0xc4a574);
+  const trim = createPaperMaterial(0xe8e0d4);
+
+  // Low dock / footing in the water
+  const dock = new THREE.Mesh(
+    new THREE.BoxGeometry(r * 1.9, r * 0.22, r * 1.5),
+    wood,
+  );
+  dock.position.y = r * 0.08;
+  dock.castShadow = true;
+  dock.receiveShadow = true;
+  group.add(dock);
+
+  // House body
+  const bodyW = r * 1.35;
+  const bodyD = r * 1.05;
+  const bodyH = r * 1.15;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(bodyW, bodyH, bodyD), green);
+  body.position.y = r * 0.22 + bodyH * 0.5;
+  body.castShadow = true;
+  group.add(body);
+
+  // Door + window trim
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(bodyW * 0.28, bodyH * 0.55, 0.08),
+    trim,
+  );
+  door.position.set(0, r * 0.22 + bodyH * 0.32, bodyD * 0.52);
+  group.add(door);
+  const window = new THREE.Mesh(
+    new THREE.BoxGeometry(bodyW * 0.22, bodyH * 0.22, 0.08),
+    createPaperMaterial(0x9ec8e0),
+  );
+  window.position.set(bodyW * 0.28, r * 0.22 + bodyH * 0.62, bodyD * 0.52);
+  group.add(window);
+
+  // Pitched green roof
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(r * 1.05, r * 0.7, 4),
+    greenDark,
+  );
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = r * 0.22 + bodyH + r * 0.28;
+  roof.castShadow = true;
+  group.add(roof);
+
+  // Tiny pier plank sticking out
+  const pier = new THREE.Mesh(
+    new THREE.BoxGeometry(r * 0.55, r * 0.1, r * 0.9),
+    wood,
+  );
+  pier.position.set(0, r * 0.12, bodyD * 0.85);
+  pier.castShadow = true;
+  group.add(pier);
+
+  group.rotation.y = Math.random() * Math.PI * 2;
+  return group;
+}
+
 /** Papercraft miniature island; optional tiny lighthouse. */
 function createMiniatureIsland(radius, { withLighthouse = false } = {}) {
   const group = new THREE.Group();
@@ -956,6 +1153,8 @@ export async function createObstacleMesh(type, radius, options = {}) {
     mesh = createScoringRing(radius, options.facing ?? 0);
   } else if (type === 'lighthouse') {
     mesh = await createLighthouseIsland(radius);
+  } else if (type === 'boathouse') {
+    mesh = createGreenBoatHouse(radius);
   } else if (type === 'island' || type === 'rock') {
     mesh = createMiniatureIsland(radius, {
       withLighthouse: type === 'rock' && Math.random() < 0.35,
@@ -979,6 +1178,13 @@ export async function createObstacleMesh(type, radius, options = {}) {
     const tip = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.2, 4, 4), stripeMat1);
     tip.position.y = radius * 2.0;
     mesh.add(tip);
+
+    mesh.userData.kind = 'buoy';
+    mesh.userData.baseY = 0.05;
+    mesh.userData.bobPhase = Math.random() * Math.PI * 2;
+    mesh.userData.bobSpeed = 1.6 + Math.random() * 0.9;
+    mesh.userData.bobAmp = 0.12 + Math.random() * 0.08;
+    mesh.userData.tiltAmp = 0.06 + Math.random() * 0.04;
   } else if (type === 'leaf') {
     // Folded green cardstock leaf
     mesh = new THREE.Group();

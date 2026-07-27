@@ -47,33 +47,261 @@ function createEllipseRingMesh(innerRx, outerRx, rzScale, material, y = 0.01) {
   return mesh;
 }
 
-function createDuck() {
+/**
+ * Papercraft duck. Adults are mallard-colored; only ducklings stay yellow.
+ * Head is a separate group so it can look / bob.
+ * @param {{ baby?: boolean, hen?: boolean }} [opts]
+ */
+function createDuck({ baby = false, hen = false } = {}) {
   const g = new THREE.Group();
+  g.name = baby ? 'Duckling' : hen ? 'DuckHen' : 'DuckDrake';
+  const s = baby ? 0.5 : 1;
+
+  // Palette — ducklings yellow; hens mottled brown; drakes classic mallard
+  const colors = baby
+    ? {
+      body: 0xf2d06a,
+      breast: 0xf6dc88,
+      head: 0xf8e090,
+      bill: 0xe8a040,
+      wing: 0xe8c85a,
+      tail: 0xe0b848,
+    }
+    : hen
+      ? {
+        body: 0x8a6a48,
+        breast: 0x9a7a55,
+        head: 0x7a5a3a,
+        bill: 0xc4883a,
+        wing: 0x6e5438,
+        tail: 0x5a4430,
+        speculum: 0x3a6a9a,
+      }
+      : {
+        body: 0x9aa0a6,
+        breast: 0xa85428,
+        head: 0x1f6b4a,
+        bill: 0xe8a030,
+        wing: 0x7a8088,
+        tail: 0x2a2a2e,
+        ring: 0xf4f0e8,
+        speculum: 0x2f6fad,
+      };
+
+  // Elongated floating body
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, 8, 6),
-    createPaperMaterial(0xd4a84b),
+    new THREE.SphereGeometry(0.52 * s, 10, 8),
+    createPaperMaterial(colors.body),
   );
-  body.scale.set(1.3, 0.85, 1);
-  body.position.y = 0.35;
+  body.scale.set(1.55, 0.72, 1.05);
+  body.position.set(-0.05 * s, 0.32 * s, 0);
   g.add(body);
+
+  // Breast / chest
+  const breast = new THREE.Mesh(
+    new THREE.SphereGeometry(0.38 * s, 8, 6),
+    createPaperMaterial(colors.breast),
+  );
+  breast.scale.set(0.95, 0.85, 1.05);
+  breast.position.set(0.35 * s, 0.34 * s, 0);
+  g.add(breast);
+
+  // Wing pads
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28 * s, 8, 6),
+      createPaperMaterial(colors.wing),
+    );
+    wing.scale.set(1.15, 0.35, 0.7);
+    wing.position.set(-0.05 * s, 0.42 * s, side * 0.42 * s);
+    wing.rotation.z = side * 0.15;
+    g.add(wing);
+    if (colors.speculum) {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.22 * s, 0.06 * s, 0.12 * s),
+        createPaperMaterial(colors.speculum),
+      );
+      bar.position.set(0.02 * s, 0.44 * s, side * 0.5 * s);
+      g.add(bar);
+    }
+  }
+
+  // Tail
+  const tail = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2 * s, 0.4 * s, 6),
+    createPaperMaterial(colors.tail),
+  );
+  tail.rotation.z = Math.PI / 2;
+  tail.position.set(-0.85 * s, 0.38 * s, 0);
+  g.add(tail);
+
+  // Head + neck (animated)
+  const headGroup = new THREE.Group();
+  headGroup.name = 'DuckHead';
+  headGroup.position.set(0.55 * s, 0.55 * s, 0);
+
+  if (!baby) {
+    const neck = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14 * s, 0.18 * s, 0.28 * s, 8),
+      createPaperMaterial(hen ? colors.head : colors.breast),
+    );
+    neck.position.set(-0.06 * s, 0.05 * s, 0);
+    neck.rotation.z = 0.35;
+    headGroup.add(neck);
+    if (colors.ring) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.17 * s, 0.035 * s, 6, 12),
+        createPaperMaterial(colors.ring),
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0.02 * s, 0.16 * s, 0);
+      headGroup.add(ring);
+    }
+  }
+
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.32, 8, 6),
-    createPaperMaterial(0xe8c56a),
+    new THREE.SphereGeometry((baby ? 0.3 : 0.28) * s, 10, 8),
+    createPaperMaterial(colors.head),
   );
-  head.position.set(0.45, 0.7, 0);
-  g.add(head);
-  const beak = new THREE.Mesh(
-    new THREE.ConeGeometry(0.12, 0.35, 5),
-    createPaperMaterial(0xe07040),
+  head.scale.set(1.05, 0.95, 1.0);
+  head.position.set(0.08 * s, 0.28 * s, 0);
+  headGroup.add(head);
+
+  // Flattened bill
+  const bill = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34 * s, 0.1 * s, 0.16 * s),
+    createPaperMaterial(colors.bill),
   );
-  beak.rotation.z = -Math.PI / 2;
-  beak.position.set(0.75, 0.65, 0);
-  g.add(beak);
-  g.userData.kind = 'duck';
+  bill.position.set(0.32 * s, 0.22 * s, 0);
+  bill.rotation.z = -0.08;
+  headGroup.add(bill);
+
+  g.add(headGroup);
+
+  g.userData.kind = baby ? 'duckling' : 'duck';
+  g.userData.head = headGroup;
   g.userData.phase = Math.random() * Math.PI * 2;
-  g.userData.speed = 0.15 + Math.random() * 0.2;
-  g.userData.orbitR = 0.55 + Math.random() * 0.25;
+  g.userData.heading = Math.random() * Math.PI * 2;
+  g.userData.speed = baby ? 0.9 + Math.random() * 0.4 : 1.1 + Math.random() * 0.7;
+  g.userData.turnTimer = 1 + Math.random() * 3;
+  g.userData.peckTimer = 2 + Math.random() * 5;
+  g.userData.lastTime = null;
+  g.userData.waterY = 0.12;
   return g;
+}
+
+/** Mommy duck with a short line of ducklings following behind. */
+function createDuckFamily() {
+  const family = new THREE.Group();
+  family.name = 'DuckFamily';
+  const mom = createDuck({ baby: false, hen: true });
+  mom.userData.kind = 'duckMom';
+  family.add(mom);
+
+  const babyCount = 3 + Math.floor(Math.random() * 3); // 3–5
+  const babies = [];
+  for (let i = 0; i < babyCount; i++) {
+    const baby = createDuck({ baby: true });
+    baby.userData.kind = 'duckling';
+    baby.position.set(-(i + 1) * 1.05, 0, (i % 2 === 0 ? 0.12 : -0.12));
+    family.add(baby);
+    babies.push(baby);
+  }
+
+  family.userData.kind = 'duckFamily';
+  family.userData.mom = mom;
+  family.userData.babies = babies;
+  family.userData.heading = Math.random() * Math.PI * 2;
+  family.userData.speed = 1.4 + Math.random() * 0.6;
+  family.userData.turnTimer = 2 + Math.random() * 4;
+  family.userData.phase = Math.random() * Math.PI * 2;
+  family.userData.lastTime = null;
+  family.userData.waterY = 0.12;
+  family.rotation.y = family.userData.heading;
+  return family;
+}
+
+/** Solo ducks + occasional mommy-and-babies procession for a map basin. */
+function createLakeDucks(waterRx, waterRz = waterRx) {
+  const root = new THREE.Group();
+  root.name = 'LakeDucks';
+  const soloCount = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < soloCount; i++) {
+    const duck = createDuck({ hen: Math.random() < 0.45 });
+    const angle = Math.random() * Math.PI * 2;
+    const t = 0.25 + Math.random() * 0.5;
+    duck.position.set(Math.cos(angle) * waterRx * t, duck.userData.waterY, Math.sin(angle) * waterRz * t);
+    duck.userData.boundsRx = waterRx * 0.82;
+    duck.userData.boundsRz = waterRz * 0.82;
+    duck.rotation.y = duck.userData.heading;
+    root.add(duck);
+  }
+
+  // Often one family crossing the water
+  if (Math.random() < 0.85) {
+    const family = createDuckFamily();
+    const angle = Math.random() * Math.PI * 2;
+    const t = 0.3 + Math.random() * 0.4;
+    family.position.set(
+      Math.cos(angle) * waterRx * t,
+      family.userData.waterY,
+      Math.sin(angle) * waterRz * t,
+    );
+    family.userData.boundsRx = waterRx * 0.8;
+    family.userData.boundsRz = waterRz * 0.8;
+    root.add(family);
+  }
+  return root;
+}
+
+function animateDuckHead(duck, time, dt) {
+  const head = duck.userData.head;
+  if (!head) return;
+  const phase = duck.userData.phase || 0;
+  duck.userData.peckTimer = (duck.userData.peckTimer ?? 3) - dt;
+  if (duck.userData.peckTimer <= 0) {
+    duck.userData.pecking = 0.45 + Math.random() * 0.35;
+    duck.userData.peckTimer = 2.5 + Math.random() * 6;
+  }
+  if (duck.userData.pecking > 0) {
+    duck.userData.pecking -= dt;
+    head.rotation.z = -0.55 * Math.sin((1 - duck.userData.pecking) * Math.PI);
+    head.rotation.y = 0;
+  } else {
+    head.rotation.y = Math.sin(time * 1.3 + phase) * 0.45;
+    head.rotation.z = Math.sin(time * 2.1 + phase * 1.7) * 0.12;
+  }
+}
+
+function stepDuckWander(obj, time, dt, {
+  defaultSpeed = 1.2,
+  turnScale = 1.6,
+} = {}) {
+  obj.userData.turnTimer = (obj.userData.turnTimer ?? 2) - dt;
+  if (obj.userData.turnTimer <= 0) {
+    obj.userData.heading = (obj.userData.heading || 0) + (Math.random() - 0.5) * turnScale;
+    obj.userData.turnTimer = 1.5 + Math.random() * 4;
+    obj.userData.speed = defaultSpeed * (0.75 + Math.random() * 0.5);
+  }
+
+  const bRx = obj.userData.boundsRx || 70;
+  const bRz = obj.userData.boundsRz || 70;
+  const nx = obj.position.x / bRx;
+  const nz = obj.position.z / bRz;
+  if (nx * nx + nz * nz > 0.9) {
+    obj.userData.heading = Math.atan2(-obj.position.z, -obj.position.x)
+      + (Math.random() - 0.5) * 0.5;
+    obj.userData.turnTimer = 1.2 + Math.random() * 2;
+  }
+
+  const heading = obj.userData.heading || 0;
+  const spd = obj.userData.speed || defaultSpeed;
+  obj.position.x += Math.cos(heading) * spd * dt;
+  obj.position.z += Math.sin(heading) * spd * dt;
+  const waterY = obj.userData.waterY ?? 0.12;
+  const phase = obj.userData.phase || 0;
+  obj.position.y = waterY + Math.sin(time * 2.4 + phase) * 0.05;
+  obj.rotation.y = heading;
 }
 
 function createLilyCluster() {
@@ -113,26 +341,160 @@ function createFishFlash() {
   return mesh;
 }
 
-function createNycSkyline(waterRx) {
+const FISH_COLORS = [0xc9a24a, 0xd4b06a, 0xe8c56a, 0xb8893a, 0x8eb4c8];
+
+/** Tiny stylized fish for underwater schools. */
+function createSchoolFish(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.45,
+    metalness: 0.15,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), mat);
+  body.scale.set(1.6, 0.7, 0.85);
+  g.add(body);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 5), mat);
+  tail.rotation.z = Math.PI / 2;
+  tail.position.x = -0.38;
+  g.add(tail);
+  g.userData.wigglePhase = Math.random() * Math.PI * 2;
+  return g;
+}
+
+/**
+ * A few small schools that wander randomly under the water surface.
+ * @returns {THREE.Group}
+ */
+function createFishSchools(waterRx, waterRz = waterRx) {
+  const root = new THREE.Group();
+  root.name = 'FishSchools';
+  const schoolCount = 3 + Math.floor(Math.random() * 2); // 3–4 schools
+  for (let s = 0; s < schoolCount; s++) {
+    const school = new THREE.Group();
+    school.name = 'FishSchool';
+    const angle = Math.random() * Math.PI * 2;
+    const t = 0.2 + Math.random() * 0.55;
+    const x = Math.cos(angle) * waterRx * t;
+    const z = Math.sin(angle) * waterRz * t;
+    const depth = -0.35 - Math.random() * 0.35;
+    school.position.set(x, depth, z);
+
+    const heading = Math.random() * Math.PI * 2;
+    school.userData.kind = 'fishSchool';
+    school.userData.heading = heading;
+    school.userData.speed = 1.8 + Math.random() * 1.6;
+    school.userData.turnTimer = 1.5 + Math.random() * 3;
+    school.userData.boundsRx = waterRx * 0.78;
+    school.userData.boundsRz = waterRz * 0.78;
+    school.userData.baseDepth = depth;
+    school.userData.phase = Math.random() * Math.PI * 2;
+    school.userData.lastTime = null;
+
+    const fishCount = 4 + Math.floor(Math.random() * 4); // 4–7 fish
+    const color = FISH_COLORS[Math.floor(Math.random() * FISH_COLORS.length)];
+    for (let i = 0; i < fishCount; i++) {
+      const fish = createSchoolFish(color);
+      fish.position.set(
+        (Math.random() - 0.5) * 1.8,
+        (Math.random() - 0.5) * 0.35,
+        (Math.random() - 0.5) * 1.4,
+      );
+      fish.rotation.y = Math.random() * 0.4;
+      school.add(fish);
+    }
+    school.rotation.y = heading;
+    root.add(school);
+  }
+  return root;
+}
+
+function createNycBuilding({ tall = false, mid = false } = {}) {
+  const g = new THREE.Group();
+  const colors = [0xc8cdd4, 0xb0b8c2, 0xd8dce2, 0xa8b0bc, 0xbec6d0, 0xd0d5dc];
+  const glass = createPaperMaterial(0x8aa8c0);
+  const bodyColor = colors[Math.floor(Math.random() * colors.length)];
+  const w = mid ? 7 + Math.random() * 11 : 12 + Math.random() * 20;
+  const d = mid ? 6 + Math.random() * 9 : 10 + Math.random() * 16;
+  const h = tall
+    ? 70 + Math.random() * 90
+    : mid
+      ? 16 + Math.random() * 28
+      : 36 + Math.random() * 55;
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), createPaperMaterial(bodyColor));
+  body.position.y = h * 0.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+
+  if (h > 22) {
+    const bands = 2 + Math.floor(Math.random() * 4);
+    for (let b = 0; b < bands; b++) {
+      const band = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.9, h * 0.05, d * 1.02),
+        glass,
+      );
+      band.position.y = h * (0.2 + b * 0.18);
+      g.add(band);
+    }
+  }
+
+  // Spire / setback tip on taller towers
+  if (tall || Math.random() > 0.5) {
+    const tipH = tall ? 10 + Math.random() * 18 : 4 + Math.random() * 8;
+    const tip = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 0.35, tipH, d * 0.35),
+      createPaperMaterial(0x9aa3b0),
+    );
+    tip.position.y = h + tipH * 0.45;
+    tip.castShadow = true;
+    g.add(tip);
+  }
+  return g;
+}
+
+/** Mid-range Upper East / Midtown blocks just beyond the tree ring. */
+function createNycBackgroundBuildings(waterRx, waterRz = waterRx) {
+  const group = new THREE.Group();
+  group.name = 'NycBackgroundBuildings';
+  const count = 48;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
+    // Leave a small gap at the east boathouse so Kerbs stays readable
+    if (angle > -0.35 && angle < 0.35) continue;
+    const dist = Math.max(waterRx, waterRz) + 78 + Math.random() * 50;
+    const block = createNycBuilding({ mid: true, tall: Math.random() > 0.88 });
+    block.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+    block.rotation.y = angle + Math.PI + (Math.random() - 0.5) * 0.3;
+    group.add(block);
+  }
+  return group;
+}
+
+/** Dense downtown skyline ring all around Conservatory Water. */
+function createNycSkyline(waterRx, waterRz = waterRx) {
   const group = new THREE.Group();
   group.name = 'NycSkyline';
-  const colors = [0xc8cdd4, 0xb0b8c2, 0xd8dce2, 0xa8b0bc];
-  for (let i = 0; i < 36; i++) {
-    const angle = (i / 36) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
-    // Far ring — tall but distant so they sit low in the frame
-    const distance = waterRx + 280 + Math.random() * 80;
-    const w = 8 + Math.random() * 14;
-    const d = 8 + Math.random() * 12;
-    const h = 40 + Math.random() * 70;
-    const tower = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      createPaperMaterial(colors[i % colors.length]),
-    );
-    tower.position.set(
-      Math.cos(angle) * distance,
-      h * 0.5,
-      Math.sin(angle) * distance,
-    );
+  const rim = Math.max(waterRx, waterRz);
+  const count = 52;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.06;
+    const dist = rim + 200 + Math.random() * 100;
+    const tower = createNycBuilding({ tall: Math.random() > 0.4 });
+    tower.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+    tower.rotation.y = angle + Math.PI + (Math.random() - 0.5) * 0.15;
+    group.add(tower);
+  }
+  // Extra Midtown mass to the south (−Z)
+  for (let i = 0; i < 18; i++) {
+    const angle = Math.PI * 0.5 + (i / 18) * 1.1 - 0.55 + (Math.random() - 0.5) * 0.05;
+    const dist = rim + 230 + Math.random() * 70;
+    const tower = createNycBuilding({ tall: true });
+    tower.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
     tower.rotation.y = angle + Math.PI;
     group.add(tower);
   }
@@ -154,6 +516,100 @@ function createKerbsBoathouse() {
   const steeple = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.9, 4, 6), copper);
   steeple.position.y = 12.5;
   g.add(steeple);
+  return g;
+}
+
+/** Papercraft balloon vendor with a floating bunch (Central Park sidewalk cart). */
+function createBalloonSalesman() {
+  const g = new THREE.Group();
+  g.name = 'BalloonSalesman';
+
+  // Small wheeled cart
+  const cart = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 1.6, 1.6),
+    createPaperMaterial(0xf0ebe3),
+  );
+  cart.position.set(0.9, 1.4, 0);
+  cart.castShadow = true;
+  g.add(cart);
+  const stripe = new THREE.Mesh(
+    new THREE.BoxGeometry(2.45, 0.35, 1.65),
+    createPaperMaterial(0xe85a7a),
+  );
+  stripe.position.set(0.9, 2.0, 0);
+  g.add(stripe);
+  for (const z of [-0.55, 0.55]) {
+    const wheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.35, 0.2, 10),
+      createPaperMaterial(0x3a3530),
+    );
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(0.9, 0.35, z);
+    g.add(wheel);
+  }
+
+  // Vendor figure
+  const coat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.55, 1.7, 8),
+    createPaperMaterial(0x3d5a80),
+  );
+  coat.position.set(-0.35, 1.55, 0.15);
+  coat.castShadow = true;
+  g.add(coat);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.38, 10, 8),
+    createPaperMaterial(0xffdfd0),
+  );
+  head.position.set(-0.35, 2.7, 0.15);
+  g.add(head);
+  const hat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.42, 0.35, 10),
+    createPaperMaterial(0x2b2b2b),
+  );
+  hat.position.set(-0.35, 3.05, 0.15);
+  g.add(hat);
+  const brim = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.55, 0.08, 12),
+    createPaperMaterial(0x2b2b2b),
+  );
+  brim.position.set(-0.35, 2.9, 0.15);
+  g.add(brim);
+
+  // Balloon bunch on strings
+      const balloonColors = [0xe85a5a, 0xf4c430, 0x5a9fe8, 0xe85a9a, 0x6bcb5a, 0xf28c28, 0x9b6bdf];
+  const bunch = new THREE.Group();
+  bunch.position.set(0.2, 3.4, 0.1);
+  for (let i = 0; i < 9; i++) {
+    const color = balloonColors[i % balloonColors.length];
+    const balloon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42 + Math.random() * 0.12, 10, 8),
+      createPaperMaterial(color),
+    );
+    const a = (i / 9) * Math.PI * 2;
+    const r = 0.35 + (i % 3) * 0.2;
+    balloon.position.set(Math.cos(a) * r, 1.2 + Math.random() * 0.9, Math.sin(a) * r);
+    balloon.castShadow = true;
+    bunch.add(balloon);
+    // Tiny knot under balloon
+    const knot = new THREE.Mesh(
+      new THREE.ConeGeometry(0.08, 0.14, 5),
+      createPaperMaterial(color),
+    );
+    knot.position.copy(balloon.position);
+    knot.position.y -= 0.42;
+    bunch.add(knot);
+  }
+  // Shared string stem in the vendor's hand
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5),
+    createPaperMaterial(0xd8d0c4),
+  );
+  stem.position.set(0.05, 0.2, 0.05);
+  bunch.add(stem);
+  g.add(bunch);
+
+  g.userData.kind = 'balloonSalesman';
+  g.userData.bunch = bunch;
   return g;
 }
 
@@ -221,17 +677,6 @@ export function createConservatoryScenery(map) {
     group.add(cluster);
   }
 
-  // Ducks
-  for (let i = 0; i < 5; i++) {
-    const duck = createDuck();
-    const angle = Math.random() * Math.PI * 2;
-    const t = 0.35 + Math.random() * 0.45;
-    duck.userData.homeX = Math.cos(angle) * rx * t;
-    duck.userData.homeZ = Math.sin(angle) * rz * t;
-    duck.position.set(duck.userData.homeX, 0.12, duck.userData.homeZ);
-    group.add(duck);
-  }
-
   // Fish flashes under surface
   for (let i = 0; i < 6; i++) {
     const fish = createFishFlash();
@@ -243,7 +688,25 @@ export function createConservatoryScenery(map) {
     group.add(fish);
   }
 
-  group.add(createNycSkyline(rx));
+  // Hot dog carts on the path (NW + SW shores)
+  for (const angle of [2.35, 3.95]) {
+    const cart = createFoodCart();
+    const p = ellipseOnRim(angle, pathRx + 1.2, pathRz + 1.2);
+    cart.position.set(p.x, 0, p.z);
+    cart.rotation.y = angle + Math.PI; // face the water
+    group.add(cart);
+  }
+
+  // Balloon salesman on the north path, facing the pond
+  const balloonMan = createBalloonSalesman();
+  const balloonPos = ellipseOnRim(-Math.PI * 0.5, pathRx + 2.5, pathRz + 2.5);
+  balloonMan.position.set(balloonPos.x, 0, balloonPos.z);
+  balloonMan.rotation.y = Math.PI; // face south toward water
+  group.add(balloonMan);
+
+  // Neighborhood blocks + dense skyline all around
+  group.add(createNycBackgroundBuildings(rx, rz));
+  group.add(createNycSkyline(rx, rz));
   return group;
 }
 
@@ -904,17 +1367,6 @@ export function createEchoParkScenery(map) {
     group.add(cluster);
   }
 
-  // Ducks
-  for (let i = 0; i < 4; i++) {
-    const duck = createDuck();
-    const angle = Math.random() * Math.PI * 2;
-    const t = 0.4 + Math.random() * 0.4;
-    duck.userData.homeX = Math.cos(angle) * rx * t;
-    duck.userData.homeZ = Math.sin(angle) * rz * t;
-    duck.position.set(duck.userData.homeX, 0.12, duck.userData.homeZ);
-    group.add(duck);
-  }
-
   // Palms only around the shore (no Paris park trees / overhang sticks)
   for (let i = 0; i < 16; i++) {
     const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.08;
@@ -979,6 +1431,8 @@ export function buildMapWorld(map) {
     root.add(centerFountain);
   }
   root.add(scenery);
+  root.add(createFishSchools(rx, rz));
+  root.add(createLakeDucks(rx, rz));
 
   return { root, waterMat, centerFountain, scenery };
 }
@@ -1014,15 +1468,74 @@ export function updateMapAmbience(root, time, ambient = null) {
       }
       obj.position.y = waterY + Math.sin(time * 2.5 + phase) * 0.06;
     } else if (kind === 'duck') {
-      const r = obj.userData.orbitR || 2;
-      obj.position.x = hx + Math.cos(time * speed + phase) * r;
-      obj.position.z = hz + Math.sin(time * speed + phase) * r;
-      obj.rotation.y = time * speed + phase + Math.PI / 2;
-      obj.position.y = 0.12 + Math.sin(time * 2.5 + phase) * 0.04;
+      const prev = obj.userData.lastTime;
+      const dt = prev == null ? 0.016 : Math.min(0.05, Math.max(0, time - prev));
+      obj.userData.lastTime = time;
+      stepDuckWander(obj, time, dt, { defaultSpeed: 1.2, turnScale: 1.8 });
+      animateDuckHead(obj, time, dt);
+    } else if (kind === 'duckFamily') {
+      const prev = obj.userData.lastTime;
+      const dt = prev == null ? 0.016 : Math.min(0.05, Math.max(0, time - prev));
+      obj.userData.lastTime = time;
+      stepDuckWander(obj, time, dt, { defaultSpeed: 1.5, turnScale: 1.2 });
+      const mom = obj.userData.mom;
+      if (mom) animateDuckHead(mom, time, dt);
+      const babies = obj.userData.babies || [];
+      babies.forEach((baby, i) => {
+        // Keep a soft weaving line behind mom (local −X is aft)
+        const targetZ = Math.sin(time * 2.2 + i * 0.9) * 0.18;
+        baby.position.x = -(i + 1) * 1.05;
+        baby.position.z += (targetZ - baby.position.z) * Math.min(1, dt * 4);
+        baby.position.y = Math.sin(time * 3 + i) * 0.03;
+        animateDuckHead(baby, time, dt);
+      });
     } else if (kind === 'fish') {
       obj.position.x = hx + Math.cos(time * speed + phase) * 3;
       obj.position.z = hz + Math.sin(time * speed * 0.7 + phase) * 2;
       obj.material.opacity = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(time * 3 + phase));
+    } else if (kind === 'fishSchool') {
+      const prev = obj.userData.lastTime;
+      const dt = prev == null ? 0.016 : Math.min(0.05, Math.max(0, time - prev));
+      obj.userData.lastTime = time;
+
+      obj.userData.turnTimer = (obj.userData.turnTimer ?? 2) - dt;
+      if (obj.userData.turnTimer <= 0) {
+        obj.userData.heading = (obj.userData.heading || 0) + (Math.random() - 0.5) * 1.8;
+        obj.userData.turnTimer = 1.2 + Math.random() * 3.5;
+        obj.userData.speed = 1.6 + Math.random() * 2.0;
+      }
+
+      const bRx = obj.userData.boundsRx || 70;
+      const bRz = obj.userData.boundsRz || 70;
+      const nx = obj.position.x / bRx;
+      const nz = obj.position.z / bRz;
+      if (nx * nx + nz * nz > 0.92) {
+        obj.userData.heading = Math.atan2(-obj.position.z, -obj.position.x)
+          + (Math.random() - 0.5) * 0.6;
+        obj.userData.turnTimer = 1.5 + Math.random() * 2;
+      }
+
+      const heading = obj.userData.heading || 0;
+      const spd = obj.userData.speed || 2;
+      obj.position.x += Math.cos(heading) * spd * dt;
+      obj.position.z += Math.sin(heading) * spd * dt;
+
+      const baseDepth = obj.userData.baseDepth ?? -0.45;
+      obj.position.y = baseDepth + Math.sin(time * 1.4 + phase) * 0.08;
+      obj.rotation.y = heading;
+
+      obj.children.forEach((fish, i) => {
+        const wp = fish.userData.wigglePhase || 0;
+        if (fish.userData.baseY == null) fish.userData.baseY = fish.position.y;
+        fish.rotation.y = Math.sin(time * 8 + wp + i) * 0.25;
+        fish.position.y = fish.userData.baseY + Math.sin(time * 5 + wp) * 0.05;
+      });
+    } else if (kind === 'balloonSalesman') {
+      const bunch = obj.userData.bunch;
+      if (bunch) {
+        bunch.position.y = 3.4 + Math.sin(time * 1.6) * 0.12;
+        bunch.rotation.y = Math.sin(time * 0.7) * 0.08;
+      }
     }
   });
 }

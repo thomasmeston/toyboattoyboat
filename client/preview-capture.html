@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- Dev-only: re-bakes menu option-card PNGs. See src/previewCapture.js. Not a build entry. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Preview capture</title>
+    <style>
+        body { margin: 0; background: #444; font-family: monospace; color: #fff; }
+        .grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; }
+        figure { margin: 0; }
+        figcaption { font-size: 12px; text-align: center; padding-top: 6px; }
+        canvas { display: block; width: 256px; height: 256px; }
+    </style>
+</head>
+<body>
+    <div class="grid" id="grid"></div>
+    <script type="module" src="/src/previewCapture.js"></script>
+</body>
+</html>
