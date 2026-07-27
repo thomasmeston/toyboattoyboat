@@ -40,6 +40,7 @@ const clientEvents = [
   'steerBoat',
   'respawnBoat',
   'startCourse',
+  'tagCourseTarget',
   'abandonCourse',
   'leaveGame',
   'devGetSettings',

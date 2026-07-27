@@ -3,6 +3,7 @@
 import {
   COURSE_DEFS,
   buildCourseOrder,
+  isDuckCourse,
   listCourses,
   medalForTime,
 } from './ringCourses.js';
@@ -432,10 +433,40 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     };
   }
 
-  function advanceCourse(playerId, obstacleId) {
+  function idleCourse() {
+    return {
+      id: null,
+      status: 'idle',
+      kind: 'rings',
+      ringOrder: [],
+      collected: null,
+      nextIndex: 0,
+      startedAt: 0,
+      finishedAt: 0,
+    };
+  }
+
+  function finishCourse(playerId) {
     const player = players[playerId];
     const course = player?.course;
     if (!course || course.status !== 'active') return;
+    const timeMs = Math.round((simTime - course.startedAt) * 1000);
+    const medal = medalForTime(course.id, timeMs);
+    course.status = 'complete';
+    course.finishedAt = simTime;
+    emit('courseFinished', {
+      courseId: course.id,
+      timeMs,
+      medal,
+      name: COURSE_DEFS[course.id]?.name || course.id,
+    }, playerId);
+    player.course = idleCourse();
+  }
+
+  function advanceCourse(playerId, obstacleId) {
+    const player = players[playerId];
+    const course = player?.course;
+    if (!course || course.status !== 'active' || course.kind === 'ducks') return;
     const expect = course.ringOrder[course.nextIndex];
     if (obstacleId !== expect) return;
     course.nextIndex += 1;
@@ -446,17 +477,29 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
       nextRingId: course.ringOrder[course.nextIndex] || null,
     }, playerId);
     if (course.nextIndex >= course.ringOrder.length) {
-      const timeMs = Math.round((simTime - course.startedAt) * 1000);
-      const medal = medalForTime(course.id, timeMs);
-      course.status = 'complete';
-      course.finishedAt = simTime;
-      emit('courseFinished', {
-        courseId: course.id,
-        timeMs,
-        medal,
-        name: COURSE_DEFS[course.id]?.name || course.id,
-      }, playerId);
-      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+      finishCourse(playerId);
+    }
+  }
+
+  function advanceDuckCourse(playerId, targetId) {
+    const player = players[playerId];
+    const course = player?.course;
+    if (!course || course.status !== 'active' || course.kind !== 'ducks') return;
+    if (typeof targetId !== 'string' || !course.ringOrder.includes(targetId)) return;
+    if (!course.collected) course.collected = new Set();
+    if (course.collected.has(targetId)) return;
+    course.collected.add(targetId);
+    course.nextIndex = course.collected.size;
+    emit('courseProgress', {
+      courseId: course.id,
+      nextIndex: course.nextIndex,
+      ringOrder: course.ringOrder,
+      nextRingId: null,
+      taggedId: targetId,
+      targetKind: 'ducks',
+    }, playerId);
+    if (course.collected.size >= course.ringOrder.length) {
+      finishCourse(playerId);
     }
   }
 
@@ -1201,7 +1244,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
         stickType: data.stickType || 'wooden',
       });
       player.playerName = player.boat.customization.playerName;
-      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+      player.course = idleCourse();
       spawnComputerPlayers();
       emit('initGame', {
         obstacles: [...obstacles],
@@ -1236,7 +1279,7 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
       for (const id in players) {
         const p = players[id];
         if (!p?.isPlaying || !p.boat) continue;
-        p.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+        p.course = idleCourse();
         const customization = p.boat.customization;
         const score = p.boat.score || 0;
         p.boat = createBoatAtAngle(p.playerAngle, customization, score);
@@ -1308,7 +1351,44 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
     if (event === 'startCourse') {
       if (!player.isPlaying || !player.boat || player.boat.isSunk) return;
       const courseId = data.courseId;
-      if (!COURSE_DEFS[courseId]) return;
+      const def = COURSE_DEFS[courseId];
+      if (!def) return;
+
+      if (isDuckCourse(courseId)) {
+        const raw = Array.isArray(data.targetIds) ? data.targetIds : [];
+        const seen = new Set();
+        const targetIds = [];
+        for (const id of raw) {
+          if (typeof id !== 'string' || !/^duck_\d+$/.test(id) || seen.has(id)) continue;
+          seen.add(id);
+          targetIds.push(id);
+          if (targetIds.length >= 24) break;
+        }
+        if (targetIds.length < 1) {
+          emit('courseError', { message: 'No ducks on this lake.' }, playerId);
+          return;
+        }
+        player.course = {
+          id: courseId,
+          status: 'active',
+          kind: 'ducks',
+          ringOrder: targetIds,
+          collected: new Set(),
+          nextIndex: 0,
+          startedAt: simTime,
+          finishedAt: 0,
+        };
+        emit('courseStarted', {
+          courseId,
+          name: def.name,
+          ringOrder: targetIds,
+          nextRingId: null,
+          targetKind: 'ducks',
+          medalTimes: def.medalTimes,
+        }, playerId);
+        return;
+      }
+
       const ringOrder = buildCourseOrder(obstacles, courseId);
       if (!ringOrder) {
         emit('courseError', { message: 'Not enough rings for this course.' }, playerId);
@@ -1317,23 +1397,31 @@ export function createFountainSim({ onEmit = () => {}, mapId = 'paris_fountain' 
       player.course = {
         id: courseId,
         status: 'active',
+        kind: 'rings',
         ringOrder,
+        collected: null,
         nextIndex: 0,
         startedAt: simTime,
         finishedAt: 0,
       };
       emit('courseStarted', {
         courseId,
-        name: COURSE_DEFS[courseId].name,
+        name: def.name,
         ringOrder,
         nextRingId: ringOrder[0],
-        medalTimes: COURSE_DEFS[courseId].medalTimes,
+        targetKind: 'rings',
+        medalTimes: def.medalTimes,
       }, playerId);
+      return;
+    }
+    if (event === 'tagCourseTarget') {
+      if (!player.isPlaying || !player.boat || player.boat.isSunk) return;
+      advanceDuckCourse(playerId, data?.targetId);
       return;
     }
     if (event === 'abandonCourse') {
       if (!player.course || player.course.status !== 'active') return;
-      player.course = { id: null, status: 'idle', ringOrder: [], nextIndex: 0, startedAt: 0 };
+      player.course = idleCourse();
       emit('courseAbandoned', {}, playerId);
       return;
     }

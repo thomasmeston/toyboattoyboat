@@ -1,28 +1,42 @@
-/** Named ring courses — ordered ring picks + medal thresholds (ms). */
+/** Named courses — ring routes or collect goals + medal thresholds (ms). */
 
 export const COURSE_DEFS = {
   figure_eight: {
     id: 'figure_eight',
     name: 'Figure-eight',
+    kind: 'rings',
     blurb: 'Cross the basin twice through opposite rings.',
     medalTimes: { gold: 45000, silver: 70000, bronze: 110000 },
   },
   island_hop: {
     id: 'island_hop',
     name: 'Island hop',
+    kind: 'rings',
     blurb: 'Outer → mid → near the center fountain.',
     medalTimes: { gold: 40000, silver: 65000, bronze: 100000 },
   },
   rim_run: {
     id: 'rim_run',
     name: 'Rim run',
+    kind: 'rings',
     blurb: 'Three rings along one arc of the fountain.',
     medalTimes: { gold: 35000, silver: 55000, bronze: 90000 },
+  },
+  get_the_ducks: {
+    id: 'get_the_ducks',
+    name: 'Get the Ducks!',
+    kind: 'ducks',
+    blurb: 'Sail over every duck on the lake — any order.',
+    medalTimes: { gold: 70000, silver: 110000, bronze: 170000 },
   },
 };
 
 export function listCourses() {
   return Object.values(COURSE_DEFS);
+}
+
+export function isDuckCourse(courseId) {
+  return COURSE_DEFS[courseId]?.kind === 'ducks';
 }
 
 export function medalForTime(courseId, timeMs) {

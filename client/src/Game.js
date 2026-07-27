@@ -14,7 +14,12 @@ import { DevMode } from './DevMode.js';
 import { SoloSocket } from './SoloSocket.js';
 import { bindMobileControls, releaseMobileKeys } from './MobileControls.js';
 import { applyTouchUiClass, detectTouchUi } from './mobileDetect.js';
-import { buildMapWorld, disposeObject3D, updateMapAmbience } from './maps/MapScenery.js';
+import {
+  buildMapWorld,
+  disposeObject3D,
+  listDuckCourseTargetIds,
+  updateMapAmbience,
+} from './maps/MapScenery.js';
 import { DEFAULT_MAP_ID, getMap, listMaps, normalizeMapId } from '../../shared/maps.js';
 
 const WALK_SPEED = 0.006; // rad per frame-unit when holding A/D
@@ -695,10 +700,19 @@ export class Game {
         nextIndex: 0,
         startedAtMs: performance.now(),
         medalTimes: data.medalTimes,
+        targetKind: data.targetKind || 'rings',
+        collected: new Set(),
+        name: data.name,
       };
       this._courseNextRingId = data.nextRingId;
+      this.clearDuckCourseMarks();
       this.setCourseUiActive(true);
-      this.setCourseStatus(`${data.name} — ring 1/${data.ringOrder.length}`);
+      const total = data.ringOrder?.length || 0;
+      if (data.targetKind === 'ducks') {
+        this.setCourseStatus(`${data.name} — 0/${total} ducks`);
+      } else {
+        this.setCourseStatus(`${data.name} — ring 1/${total}`);
+      }
     });
 
     s.on('courseProgress', (data) => {
@@ -706,12 +720,22 @@ export class Game {
       this.activeCourse.nextIndex = data.nextIndex;
       this._courseNextRingId = data.nextRingId;
       const total = data.ringOrder?.length || this.activeCourse.ringOrder.length;
-      this.setCourseStatus(`Ring ${Math.min(data.nextIndex + 1, total)}/${total}`);
+      if (data.taggedId) this.activeCourse.collected?.add(data.taggedId);
+      if (data.targetKind === 'ducks' || this.activeCourse.targetKind === 'ducks') {
+        if (data.taggedId) this.markDuckCourseTagged(data.taggedId);
+        this.setCourseStatus(`Ducks ${data.nextIndex}/${total}`);
+        this.sfx?.playQuack();
+        const boat = this.localId ? this.boatsData[this.localId] : null;
+        if (boat) this.spawnScorePopup(boat.x, boat.y, `+duck`);
+      } else {
+        this.setCourseStatus(`Ring ${Math.min(data.nextIndex + 1, total)}/${total}`);
+      }
     });
 
     s.on('courseFinished', (data) => {
       this.activeCourse = null;
       this._courseNextRingId = null;
+      this.clearDuckCourseMarks();
       this.setCourseUiActive(false);
       const medal = data.medal ? data.medal.toUpperCase() : 'FINISH';
       const secs = (data.timeMs / 1000).toFixed(1);
@@ -731,6 +755,7 @@ export class Game {
     s.on('courseAbandoned', () => {
       this.activeCourse = null;
       this._courseNextRingId = null;
+      this.clearDuckCourseMarks();
       this.setCourseUiActive(false);
       this.setCourseStatus('');
     });
@@ -1444,6 +1469,16 @@ export class Game {
       const sel = document.getElementById('course-select');
       const courseId = sel?.value;
       if (!courseId || !this.socket) return;
+      const def = this.courseCatalog.find((c) => c.id === courseId);
+      if (def?.kind === 'ducks') {
+        const targetIds = listDuckCourseTargetIds(this.mapWorld);
+        if (!targetIds.length) {
+          this.setCourseStatus('No ducks on this lake.');
+          return;
+        }
+        this.socket.emit('startCourse', { courseId, targetIds });
+        return;
+      }
       this.socket.emit('startCourse', { courseId });
     });
 
@@ -1837,13 +1872,14 @@ export class Game {
     }
   }
 
-  /** Soft quack when the local boat first brushes a duck. */
+  /** Soft quack when the local boat first brushes a duck; tags ducks during Get the Ducks!. */
   updateDuckQuacks() {
     const boat = this.localId ? this.boatMeshes[this.localId] : null;
     if (!boat || !this.mapWorld || boat.visible === false) return;
     const bx = boat.position.x;
     const bz = boat.position.z;
-    const hitR2 = 2.4 * 2.4;
+    const duckCourse = this.activeCourse?.targetKind === 'ducks';
+    const hitR2 = (duckCourse ? 3.1 : 2.4) ** 2;
     this.mapWorld.traverse((obj) => {
       const kind = obj.userData?.kind;
       if (kind !== 'duck' && kind !== 'duckMom' && kind !== 'duckling') return;
@@ -1852,9 +1888,51 @@ export class Game {
       const dz = this._duckWorldPos.z - bz;
       const overlapping = dx * dx + dz * dz <= hitR2;
       if (overlapping && !obj.userData.boatOverlapping) {
-        this.sfx?.playQuack();
+        if (!duckCourse) this.sfx?.playQuack();
+        const targetId = obj.userData.courseTargetId;
+        if (
+          duckCourse
+          && targetId
+          && !this.activeCourse.collected?.has(targetId)
+          && !obj.userData.courseCollected
+          && !obj.userData.courseTagPending
+        ) {
+          obj.userData.courseTagPending = true;
+          this.socket?.emit('tagCourseTarget', { targetId });
+        }
       }
       obj.userData.boatOverlapping = overlapping;
+    });
+  }
+
+  clearDuckCourseMarks() {
+    if (!this.mapWorld) return;
+    this.mapWorld.traverse((obj) => {
+      const kind = obj.userData?.kind;
+      if (kind !== 'duck' && kind !== 'duckMom' && kind !== 'duckling') return;
+      obj.userData.courseCollected = false;
+      obj.userData.courseTagPending = false;
+      obj.scale.setScalar(1);
+      obj.traverse((child) => {
+        if (child.isMesh && child.material && 'emissiveIntensity' in child.material) {
+          child.material.emissiveIntensity = 0;
+        }
+      });
+    });
+  }
+
+  markDuckCourseTagged(targetId) {
+    if (!this.mapWorld || !targetId) return;
+    this.mapWorld.traverse((obj) => {
+      if (obj.userData?.courseTargetId !== targetId) return;
+      obj.userData.courseCollected = true;
+      obj.scale.setScalar(1.15);
+      obj.traverse((child) => {
+        if (child.isMesh && child.material && 'emissive' in child.material) {
+          child.material.emissive?.setHex?.(0x225522);
+          if ('emissiveIntensity' in child.material) child.material.emissiveIntensity = 0.45;
+        }
+      });
     });
   }
 
@@ -1882,6 +1960,24 @@ export class Game {
         });
       }
     }
+  }
+
+  updateCourseDuckHighlight(time) {
+    if (!this.mapWorld || this.activeCourse?.targetKind !== 'ducks') return;
+    const pulse = 1 + Math.sin(time * 5) * 0.1;
+    this.mapWorld.traverse((obj) => {
+      const kind = obj.userData?.kind;
+      if (kind !== 'duck' && kind !== 'duckMom' && kind !== 'duckling') return;
+      if (obj.userData.courseCollected) return;
+      if (!obj.userData.courseTargetId) return;
+      obj.scale.setScalar(pulse);
+      obj.traverse((child) => {
+        if (child.isMesh && child.material && 'emissive' in child.material) {
+          child.material.emissive?.setHex?.(0x443311);
+          if ('emissiveIntensity' in child.material) child.material.emissiveIntensity = 0.3;
+        }
+      });
+    });
   }
 
   animate() {
@@ -1940,6 +2036,7 @@ export class Game {
     }
 
     this.updateCourseRingHighlight(time);
+    this.updateCourseDuckHighlight(time);
 
     for (let i = this._splashRipples.length - 1; i >= 0; i--) {
       const r = this._splashRipples[i];

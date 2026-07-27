@@ -225,9 +225,15 @@ function createDuckFamily() {
 function createLakeDucks(waterRx, waterRz = waterRx) {
   const root = new THREE.Group();
   root.name = 'LakeDucks';
+  let duckSeq = 0;
+  const tagDuck = (obj) => {
+    obj.userData.courseTargetId = `duck_${duckSeq++}`;
+  };
+
   const soloCount = 4 + Math.floor(Math.random() * 3);
   for (let i = 0; i < soloCount; i++) {
     const duck = createDuck({ hen: Math.random() < 0.45 });
+    tagDuck(duck);
     const angle = Math.random() * Math.PI * 2;
     const t = 0.25 + Math.random() * 0.5;
     duck.position.set(Math.cos(angle) * waterRx * t, duck.userData.waterY, Math.sin(angle) * waterRz * t);
@@ -240,6 +246,8 @@ function createLakeDucks(waterRx, waterRz = waterRx) {
   // Often one family crossing the water
   if (Math.random() < 0.85) {
     const family = createDuckFamily();
+    tagDuck(family.userData.mom);
+    for (const baby of family.userData.babies || []) tagDuck(baby);
     const angle = Math.random() * Math.PI * 2;
     const t = 0.3 + Math.random() * 0.4;
     family.position.set(
@@ -252,6 +260,19 @@ function createLakeDucks(waterRx, waterRz = waterRx) {
     root.add(family);
   }
   return root;
+}
+
+/** Stable course target ids for every duck / duckling under a map world. */
+export function listDuckCourseTargetIds(root) {
+  const ids = [];
+  if (!root) return ids;
+  root.traverse((obj) => {
+    const kind = obj.userData?.kind;
+    if (kind !== 'duck' && kind !== 'duckMom' && kind !== 'duckling') return;
+    const id = obj.userData.courseTargetId;
+    if (typeof id === 'string') ids.push(id);
+  });
+  return ids;
 }
 
 function animateDuckHead(duck, time, dt) {

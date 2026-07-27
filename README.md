@@ -39,7 +39,7 @@ npm run build:client  # production client build
 2. **Set Sail** — you spawn on the fountain rim with your boat in the water.
 3. Guide the boat with stick pokes; wind (breeze, gusts, lulls) and water drag do the rest.
 4. Sail through brass rings to score (streaks and double-clears with another boat pay bonus).
-5. Optional **Courses** in the pause menu (**Esc** → Figure-eight, Island hop, Rim run) — timed runs with bronze/silver/gold and a personal best saved locally.
+5. Optional **Courses** in the pause menu (**Esc** → Figure-eight, Island hop, Rim run, Get the Ducks!) — timed runs with bronze/silver/gold and a personal best saved locally.
 
 **Boats:** Sailboat is balanced; Sloop loves wind but dents easily; Ship tanks hits but turns slowly.
 
