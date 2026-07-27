@@ -42,6 +42,7 @@ export class AmbientBeds {
     this.sea = makeLoop(SEA_URL);
     this._mode = 'follow';
     this._started = false;
+    this._suspended = false;
   }
 
   get volume() {
@@ -73,6 +74,21 @@ export class AmbientBeds {
     this.apply();
   }
 
+  /** Pause/resume for escape menu. */
+  setSuspended(suspended) {
+    this._suspended = Boolean(suspended);
+    if (this._suspended) {
+      try {
+        this.park.pause();
+        this.sea.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    this.apply();
+  }
+
   apply() {
     if (!this._started) return;
 
@@ -82,6 +98,16 @@ export class AmbientBeds {
 
     this.park.volume = parkOn ? level : 0;
     this.sea.volume = seaOn ? level : 0;
+
+    if (this._suspended) {
+      try {
+        this.park.pause();
+        this.sea.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
 
     if (parkOn && this.park.paused) this.park.play()?.catch?.(() => {});
     if (seaOn && this.sea.paused) this.sea.play()?.catch?.(() => {});

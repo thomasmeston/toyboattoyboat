@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#2e3b4e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="ToyBoatToyBoat">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
     <title>ToyBoatToyBoat — Toy Sailboat Fountains</title>
     <!-- Google Fonts: Outfit (modern geometric) and Quicksand (rounded/casual) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -241,12 +248,19 @@
 
             <!-- Bottom bar controls -->
             <div class="hud-row hud-bottom">
-                <div class="controls-hint glass-card-mini">
+                <div class="controls-hint glass-card-mini desktop-only">
                     <span>Move <strong>A</strong><strong>D</strong></span>
                     <span class="divider">·</span>
                     <span>Push <strong>Click</strong></span>
                     <span class="divider">·</span>
                     <span>Menu <strong>Esc</strong></span>
+                </div>
+                <div class="controls-hint glass-card-mini touch-only">
+                    <span>Hold <strong>←</strong><strong>→</strong></span>
+                    <span class="divider">·</span>
+                    <span>Tap boat to push</span>
+                    <span class="divider">·</span>
+                    <span>Drag to look</span>
                 </div>
 
                 <div class="camera-toggle-container view-options" role="group" aria-label="View options">
@@ -260,6 +274,18 @@
                     <button type="button" class="btn-secondary view-option" data-camera="overview" title="Bird's-eye overview (V)">
                         Overview
                     </button>
+                </div>
+            </div>
+
+            <!-- Touch-only on-screen controls (hidden unless body.is-touch-ui) -->
+            <div id="mobile-controls" class="mobile-controls touch-only" aria-label="Touch controls">
+                <div class="mobile-controls-left">
+                    <button type="button" id="btn-mobile-left" class="mobile-btn" aria-label="Move left">◀</button>
+                    <button type="button" id="btn-mobile-right" class="mobile-btn" aria-label="Move right">▶</button>
+                </div>
+                <div class="mobile-controls-right">
+                    <button type="button" id="btn-mobile-lasso" class="mobile-btn mobile-btn-action" aria-label="Lasso">Lasso</button>
+                    <button type="button" id="btn-mobile-pause" class="mobile-btn mobile-btn-action" aria-label="Pause">Pause</button>
                 </div>
             </div>
         </div>
@@ -300,7 +326,7 @@
                     </div>
                 </div>
 
-                <div class="escape-controls-panel">
+                <div class="escape-controls-panel desktop-only">
                     <span class="course-label">Controls</span>
                     <dl class="escape-controls-list">
                         <div><dt>Move / steer</dt><dd><kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd></dd></div>
@@ -311,6 +337,18 @@
                         <div><dt>Cycle view</dt><dd><kbd>V</kbd></dd></div>
                         <div><dt>Pause menu</dt><dd><kbd>Esc</kbd></dd></div>
                         <div><dt>Dev mode</dt><dd><kbd>~</kbd></dd></div>
+                    </dl>
+                </div>
+                <div class="escape-controls-panel touch-only">
+                    <span class="course-label">Controls</span>
+                    <dl class="escape-controls-list">
+                        <div><dt>Move / steer</dt><dd>Hold ◀ ▶ buttons</dd></div>
+                        <div><dt>Push boat</dt><dd>Tap your boat</dd></div>
+                        <div><dt>Lasso</dt><dd>Lasso button</dd></div>
+                        <div><dt>Camera orbit</dt><dd>Drag with one finger</dd></div>
+                        <div><dt>Zoom</dt><dd>Pinch</dd></div>
+                        <div><dt>Cycle view</dt><dd>View buttons</dd></div>
+                        <div><dt>Pause menu</dt><dd>Pause button</dd></div>
                     </dl>
                 </div>
 

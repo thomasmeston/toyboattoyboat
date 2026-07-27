@@ -43,7 +43,7 @@ npm run build:client  # production client build
 
 **Boats:** Sailboat is balanced; Sloop loves wind but dents easily; Ship tanks hits but turns slowly.
 
-### Controls
+### Controls (desktop)
 
 | Input | Action |
 |-------|--------|
@@ -56,6 +56,22 @@ npm run build:client  # production client build
 | **Scroll** | Zoom |
 | **Esc** | Pause menu |
 | **`~`** | Dev Mode (live tweaks) |
+
+### Controls (mobile / touch)
+
+On phones and tablets (coarse pointer / no-hover), the same game shows on-screen buttons. Desktop keyboard/mouse behavior is unchanged on fine-pointer browsers.
+
+| Input | Action |
+|-------|--------|
+| Hold **◀** / **▶** | Walk the rim or steer (Follow Boat) |
+| Tap your boat | Stick poke |
+| **Lasso** button | Reel boat toward you |
+| **Pause** button | Pause menu |
+| One-finger drag | Orbit camera |
+| Pinch | Zoom |
+| View buttons | Follow Player / Follow Boat / Overview |
+
+Installable PWA: production builds register a thin service worker (shell/JS/CSS/icons only — not GLBs). Use **Add to Home Screen** from the browser menu.
 
 ## Dev Mode
 

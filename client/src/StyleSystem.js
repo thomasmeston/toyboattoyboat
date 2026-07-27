@@ -122,7 +122,7 @@ export function createWaterMaterial(color = PALETTE.water) {
 }
 
 // Configure scene lighting for clean soft paper shadows
-export function setupLighting(scene) {
+export function setupLighting(scene, { shadowMapSize = 2048, castShadow = true } = {}) {
   // Ambient Light for soft general shadows
   const ambientLight = new THREE.AmbientLight(0xfffbf0, 0.7);
   scene.add(ambientLight);
@@ -130,11 +130,12 @@ export function setupLighting(scene) {
   // Directional Light mimicking a warm afternoon sun
   const dirLight = new THREE.DirectionalLight(0xfffaed, 0.9);
   dirLight.position.set(60, 100, 40);
-  dirLight.castShadow = true;
+  dirLight.castShadow = castShadow;
   
-  // Shadow settings
-  dirLight.shadow.mapSize.width = 2048;
-  dirLight.shadow.mapSize.height = 2048;
+  // Shadow settings (desktop default 2048; mobile may pass 1024)
+  const mapSize = Math.max(256, shadowMapSize | 0);
+  dirLight.shadow.mapSize.width = mapSize;
+  dirLight.shadow.mapSize.height = mapSize;
   dirLight.shadow.camera.near = 0.5;
   dirLight.shadow.camera.far = 250;
   

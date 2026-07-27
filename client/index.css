@@ -50,6 +50,24 @@ body, html {
   top: 0;
   left: 0;
   z-index: 1;
+  touch-action: none;
+}
+
+/* Desktop default: hide touch-only chrome. body.is-touch-ui flips this. */
+.touch-only {
+  display: none !important;
+}
+
+body.is-touch-ui .desktop-only {
+  display: none !important;
+}
+
+body.is-touch-ui .touch-only {
+  display: flex !important;
+}
+
+body.is-touch-ui .escape-controls-panel.touch-only {
+  display: block !important;
 }
 
 /* Glassmorphism styling */
@@ -112,8 +130,15 @@ body, html {
 #start-screen .start-menu-card {
   padding: 20px 24px 16px;
   margin: auto;
+  max-height: calc(100dvh - 24px);
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+}
+
+@supports (height: 100dvh) {
+  #start-screen .start-menu-card {
+    max-height: calc(100dvh - 24px);
+  }
 }
 
 #start-screen .game-title {
@@ -529,6 +554,14 @@ body, html {
   #start-screen .symbol-options {
     grid-template-columns: repeat(5, 1fr);
   }
+
+  #start-screen #boat-options.card-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  #start-screen #stick-options.card-options {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .setup-section h3 {
@@ -772,8 +805,13 @@ body, html {
   flex-direction: column;
   justify-content: space-between;
   padding: 24px;
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-right: calc(24px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(24px + env(safe-area-inset-left, 0px));
   opacity: 0;
   transition: opacity 0.5s ease;
+  box-sizing: border-box;
 }
 
 .hud-container.active {
@@ -1140,6 +1178,9 @@ body, html {
 /* Escape / pause menu */
 .escape-menu-card {
   text-align: center;
+  max-height: min(90dvh, 90vh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .escape-menu-title {
@@ -1481,4 +1522,116 @@ body, html {
 .dev-sfx-row .btn-primary {
   padding: 6px 10px;
   font-size: 0.72rem;
+}
+
+/* —— Mobile / touch UI (gated by body.is-touch-ui) —— */
+.mobile-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  pointer-events: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 calc(12px + env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+
+.mobile-controls-left,
+.mobile-controls-right {
+  display: flex;
+  gap: 10px;
+  pointer-events: all;
+}
+
+.mobile-btn {
+  min-width: 56px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--glass-shadow);
+  color: var(--color-slate);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-btn:active {
+  background: rgba(46, 59, 78, 0.12);
+  transform: translateY(1px);
+}
+
+.mobile-btn-action {
+  font-size: 0.85rem;
+  min-width: 64px;
+}
+
+body.is-touch-ui:has(#escape-menu.active) #mobile-controls,
+body.is-touch-ui:has(#start-screen.active) #mobile-controls,
+body.is-touch-ui:has(#sink-screen.active) #mobile-controls {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .hud-top {
+    flex-wrap: wrap;
+  }
+
+  .hud-top-left {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .hud-top-right {
+    margin-left: 0;
+  }
+
+  .glass-bar-container {
+    width: min(240px, 100%);
+    flex: 1 1 auto;
+  }
+
+  .hud-bottom {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .camera-toggle-container.view-options {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  body.is-touch-ui .view-option {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  body.is-touch-ui .hud-bottom {
+    padding-bottom: 72px; /* room for on-screen L/R cluster */
+  }
+
+  .controls-hint {
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+  }
+}
+
+body.is-touch-ui #start-screen {
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+body.is-touch-ui .overlay-panel .glass-card {
+  margin-left: max(12px, env(safe-area-inset-left, 0px));
+  margin-right: max(12px, env(safe-area-inset-right, 0px));
 }

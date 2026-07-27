@@ -140,7 +140,7 @@ What exists today (Parisian fountain prototype):
 - [ ] Map select / level progression
 - [ ] Additional maps
 - [ ] Audio
-- [ ] Mobile-friendly controls polish
+- [x] Mobile-friendly controls polish
 
 ---
 
@@ -168,7 +168,7 @@ Audio, UX pass, performance, deployment, playtest feedback.
 - Solo-only mode or always-online multiplayer?
 - Persistent unlocks (boats, maps) or session-only customization?
 - Competitive scoring vs purely casual play?
-- Target platforms (desktop browser first; mobile later?)
+- Target platforms: desktop browser + mobile web (touch UI gated; PWA shell)
 
 These can be decided as M1 playtesting clarifies who the primary audience is.
 

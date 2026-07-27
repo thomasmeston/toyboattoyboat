@@ -12,6 +12,8 @@ import { Sfx } from './Sfx.js';
 import { startMenuPreviews } from './MenuPreviews.js';
 import { DevMode } from './DevMode.js';
 import { SoloSocket } from './SoloSocket.js';
+import { bindMobileControls, releaseMobileKeys } from './MobileControls.js';
+import { applyTouchUiClass, detectTouchUi } from './mobileDetect.js';
 import { buildMapWorld, disposeObject3D, updateMapAmbience } from './maps/MapScenery.js';
 import { DEFAULT_MAP_ID, getMap, listMaps, normalizeMapId } from '../../shared/maps.js';
 
@@ -20,9 +22,14 @@ const MAP_STORAGE_KEY = 'tbtb-map';
 const DEFAULT_FOLLOW_PITCH = (20 * Math.PI) / 180; // 20° above horizontal
 /** Stick extend duration — keep in sync with ChildAvatar POKE_MS */
 const POKE_ANIM_SEC = 0.42;
+/** px — finger must move this far before a touch becomes camera orbit (not poke) */
+const TOUCH_ORBIT_SLOP = 12;
 
 export class Game {
   constructor() {
+    this.isTouchUi = detectTouchUi();
+    applyTouchUiClass(this.isTouchUi);
+
     this.socket = null;
     this.localId = null;
     this.playerAngle = Math.random() * Math.PI * 2;
@@ -53,6 +60,8 @@ export class Game {
     this._lastPointerX = 0;
     this._lastPointerY = 0;
     this._lastMiddleClickAt = 0;
+    this._touchPtr = null; // { id, x, y, moved, orbiting } — poke vs orbit on touch
+    this._pinch = null; // { dist0, cam0 } — two-finger zoom on touch
     this._defaultCam = {
       yawOffset: 0,
       boatYawOffset: 0,
@@ -115,10 +124,33 @@ export class Game {
     this.initThree();
     this.initNetwork();
     this.bindUI();
-    this._menuPreviews = startMenuPreviews();
+    this._menuPreviews = startMenuPreviews({ useStaticBoats: this.isTouchUi });
+    bindMobileControls(this);
 
     // Start loop
     this.animate();
+  }
+
+  getPixelRatioCap() {
+    return this.isTouchUi ? 1.25 : 2;
+  }
+
+  applyRendererSize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, this.getPixelRatioCap());
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(w, h);
+    this.labelRenderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  applyCamZoom(delta) {
+    this.camDistance = Math.min(90, Math.max(16, this.camDistance + delta));
+    if (this.activeCameraMode === 'followBoat') {
+      this.camHeight = Math.max(10, this.camDistance * 0.42);
+    }
   }
 
   loadSavedMapId() {
@@ -200,17 +232,15 @@ export class Game {
     this.scene.background = new THREE.Color(0xf6f3eb);
     this.scene.fog = new THREE.Fog(0xf6f3eb, 120, 320);
 
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Renderer — mobile profile is gated; desktop keeps antialias + DPR 2 + soft shadows
+    const antialias = !this.isTouchUi;
+    this.renderer = new THREE.WebGLRenderer({ antialias, alpha: false });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     // Name tags over avatars
     this.labelRenderer = new CSS2DRenderer();
-    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
     this.labelRenderer.domElement.style.position = 'absolute';
     this.labelRenderer.domElement.style.inset = '0';
     this.labelRenderer.domElement.style.pointerEvents = 'none';
@@ -219,20 +249,19 @@ export class Game {
 
     // Camera (Isometric perspective setup)
     this.camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 1200);
+    this.applyRendererSize();
     this.updateCameraPosition();
 
     // Lighting
-    setupLighting(this.scene);
+    setupLighting(this.scene, {
+      shadowMapSize: this.isTouchUi ? 1024 : 2048,
+    });
 
     this.rebuildWorld(getMap(this.selectedMapId));
 
-    // Handle Resize
-    window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    // Handle Resize / orientation (refresh DPR for mobile)
+    window.addEventListener('resize', () => this.applyRendererSize());
+    window.visualViewport?.addEventListener('resize', () => this.applyRendererSize());
   }
 
   createNameLabel(name, isLocal = false) {
@@ -1157,10 +1186,22 @@ export class Game {
     });
 
     // 10. Pointer: click = stick push; right-drag / Alt-drag orbits; scroll zooms
+    // Touch (gated): tap = poke, one-finger drag = orbit, pinch = zoom
     const isUiTarget = (target) =>
       !!target?.closest?.(
-        'button, input, select, textarea, a, label, #sink-screen, #start-screen, #escape-menu, #dev-panel',
+        'button, input, select, textarea, a, label, #mobile-controls, #sink-screen, #start-screen, #escape-menu, #dev-panel',
       );
+
+    const applyOrbitDelta = (dx, dy) => {
+      if (this.activeCameraMode === 'follow') {
+        this.camYawOffset += dx * 0.0065;
+        if (!(this.keys.left || this.keys.right)) {
+          this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, 0.12, 1.25);
+        }
+      } else if (this.activeCameraMode === 'followBoat') {
+        this.camBoatYawOffset += dx * 0.005;
+      }
+    };
 
     window.addEventListener('pointerdown', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
@@ -1189,7 +1230,22 @@ export class Game {
       }
 
       if (e.button === 0 && !e.altKey) {
-        // Left click = aimed stick push (raycast onto own boat when possible)
+        // Touch: defer poke until pointerup so drag can become orbit
+        if (this.isTouchUi && e.pointerType === 'touch') {
+          this._touchPtr = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            moved: false,
+            orbiting: false,
+          };
+          this._cursorClient.x = e.clientX;
+          this._cursorClient.y = e.clientY;
+          this.updateCursorAim();
+          e.preventDefault();
+          return;
+        }
+        // Desktop left click = aimed stick push
         this.emitPokeBoat(e.clientX, e.clientY);
       }
     });
@@ -1204,6 +1260,33 @@ export class Game {
       this._cursorClient.y = e.clientY;
       this.updateCursorAim();
 
+      // Touch pending poke → orbit once finger moves past slop
+      if (
+        this.isTouchUi &&
+        this._touchPtr &&
+        e.pointerId === this._touchPtr.id &&
+        this.activeCameraMode !== 'overview'
+      ) {
+        const dx0 = e.clientX - this._touchPtr.x;
+        const dy0 = e.clientY - this._touchPtr.y;
+        if (!this._touchPtr.orbiting) {
+          if (Math.hypot(dx0, dy0) >= TOUCH_ORBIT_SLOP) {
+            this._touchPtr.orbiting = true;
+            this._touchPtr.moved = true;
+            this._orbitDragging = true;
+            this._lastPointerX = e.clientX;
+            this._lastPointerY = e.clientY;
+          }
+        } else {
+          const dx = e.clientX - this._lastPointerX;
+          const dy = e.clientY - this._lastPointerY;
+          this._lastPointerX = e.clientX;
+          this._lastPointerY = e.clientY;
+          applyOrbitDelta(dx, dy);
+        }
+        return;
+      }
+
       if (!this._orbitDragging) return;
       if (!e.altKey && (e.buttons & 2) === 0 && (e.buttons & 1) === 0) {
         this._orbitDragging = false;
@@ -1214,24 +1297,72 @@ export class Game {
       const dy = e.clientY - this._lastPointerY;
       this._lastPointerX = e.clientX;
       this._lastPointerY = e.clientY;
-
-      if (this.activeCameraMode === 'follow') {
-        this.camYawOffset += dx * 0.0065;
-        // Pitch stays put while walking (auto-orbit is yaw-only)
-        if (!(this.keys.left || this.keys.right)) {
-          this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, 0.12, 1.25);
-        }
-      } else if (this.activeCameraMode === 'followBoat') {
-        this.camBoatYawOffset += dx * 0.005;
-      }
+      applyOrbitDelta(dx, dy);
     });
 
     window.addEventListener('pointerup', (e) => {
+      if (
+        this.isTouchUi &&
+        this._touchPtr &&
+        e.pointerId === this._touchPtr.id
+      ) {
+        if (!this._touchPtr.orbiting && !this._touchPtr.moved) {
+          this.emitPokeBoat(e.clientX, e.clientY);
+        }
+        this._touchPtr = null;
+        this._orbitDragging = false;
+        return;
+      }
       if (e.button === 2 || e.buttons === 0) this._orbitDragging = false;
     });
-    window.addEventListener('pointercancel', () => {
+    window.addEventListener('pointercancel', (e) => {
+      if (this._touchPtr && e.pointerId === this._touchPtr.id) this._touchPtr = null;
       this._orbitDragging = false;
     });
+
+    // Pinch-to-zoom (touch only)
+    window.addEventListener(
+      'touchstart',
+      (e) => {
+        if (!this.isTouchUi) return;
+        if (document.getElementById('start-screen').classList.contains('active')) return;
+        if (this.menuOpen || this.activeCameraMode === 'overview') return;
+        if (e.touches.length === 2) {
+          const a = e.touches[0];
+          const b = e.touches[1];
+          this._pinch = {
+            dist0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+            cam0: this.camDistance,
+          };
+          this._touchPtr = null;
+          this._orbitDragging = false;
+        }
+      },
+      { passive: true },
+    );
+    window.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!this.isTouchUi || !this._pinch || e.touches.length !== 2) return;
+        const a = e.touches[0];
+        const b = e.touches[1];
+        const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (this._pinch.dist0 < 1) return;
+        const scale = this._pinch.dist0 / Math.max(1, dist);
+        this.camDistance = Math.min(90, Math.max(16, this._pinch.cam0 * scale));
+        if (this.activeCameraMode === 'followBoat') {
+          this.camHeight = Math.max(10, this.camDistance * 0.42);
+        }
+      },
+      { passive: true },
+    );
+    window.addEventListener(
+      'touchend',
+      (e) => {
+        if (e.touches.length < 2) this._pinch = null;
+      },
+      { passive: true },
+    );
 
     window.addEventListener('contextmenu', (e) => {
       if (document.getElementById('start-screen').classList.contains('active')) return;
@@ -1243,10 +1374,7 @@ export class Game {
       if (document.getElementById('start-screen').classList.contains('active')) return;
       if (this.activeCameraMode === 'overview') return;
       if (isUiTarget(e.target)) return;
-      this.camDistance = Math.min(90, Math.max(16, this.camDistance + e.deltaY * 0.04));
-      if (this.activeCameraMode === 'followBoat') {
-        this.camHeight = Math.max(10, this.camDistance * 0.42);
-      }
+      this.applyCamZoom(e.deltaY * 0.04);
     }, { passive: true });
   }
 
@@ -1418,17 +1546,21 @@ export class Game {
     if (this._menuPreviews) {
       this._menuPreviews.resume();
     } else {
-      this._menuPreviews = startMenuPreviews();
+      this._menuPreviews = startMenuPreviews({ useStaticBoats: this.isTouchUi });
     }
   }
 
   setMenuOpen(open) {
     this.menuOpen = Boolean(open);
     document.getElementById('escape-menu').classList.toggle('active', this.menuOpen);
+    this.music?.setSuspended(this.menuOpen);
+    this.ambients?.setSuspended(this.menuOpen);
+    this.sfx?.setSuspended(this.menuOpen);
     if (this.menuOpen) {
-      this.keys.left = false;
-      this.keys.right = false;
+      releaseMobileKeys(this);
       this._orbitDragging = false;
+      this._touchPtr = null;
+      this._pinch = null;
     }
   }
 

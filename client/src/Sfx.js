@@ -66,6 +66,7 @@ export class Sfx {
   constructor() {
     this._volume = 0.28;
     this._started = false;
+    this._suspended = false;
     this._moving = false;
     this._footsteps = makeAudio(FOOTSTEPS_URL, { loop: true });
     this._pokeId = DEFAULT_POKE;
@@ -177,16 +178,52 @@ export class Sfx {
     }
   }
 
+  /** Pause/resume for escape menu — stops loops and blocks one-shots. */
+  setSuspended(suspended) {
+    this._suspended = Boolean(suspended);
+    if (this._suspended) {
+      this._pauseAll();
+      return;
+    }
+    if (this._moving && this._started) this._ensureFootstepsPlaying();
+  }
+
+  _allAudios() {
+    return [
+      this._footsteps,
+      ...Object.values(this._pokePools).flat(),
+      ...Object.values(this._ringPools).flat(),
+      ...this._gustPool,
+      ...this._quackPool,
+    ];
+  }
+
+  _pauseAll() {
+    for (const a of this._allAudios()) {
+      try {
+        a.pause();
+        if (a !== this._footsteps) a.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      this._footsteps.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+  }
+
   setMoving(isMoving) {
     const next = Boolean(isMoving);
     if (next === this._moving) {
-      if (next && this._started) this._ensureFootstepsPlaying();
+      if (next && this._started && !this._suspended) this._ensureFootstepsPlaying();
       return;
     }
     this._moving = next;
     if (!this._started) return;
 
-    if (this._moving) {
+    if (this._moving && !this._suspended) {
       this._ensureFootstepsPlaying();
     } else {
       try {
@@ -199,6 +236,7 @@ export class Sfx {
   }
 
   _ensureFootstepsPlaying() {
+    if (this._suspended) return;
     const a = this._footsteps;
     a.volume = clamp01(this._volume * 1.15);
     if (a.paused) {
@@ -210,14 +248,14 @@ export class Sfx {
   update() {}
 
   playPoke() {
-    if (!this._started || this._volume <= 0.001) return;
+    if (!this._started || this._suspended || this._volume <= 0.001) return;
     const pool = this._pokePools[this._pokeId] || this._pokePools[DEFAULT_POKE];
     this._playFromPool(pool, 1.05, 0.96 + Math.random() * 0.08);
   }
 
   /** Soft splash for boat-boat bumps (reuses whoosh clip). */
   playSplash(strength = 1) {
-    if (!this._started || this._volume <= 0.001) return;
+    if (!this._started || this._suspended || this._volume <= 0.001) return;
     const pool = this._pokePools.whoosh || this._pokePools[DEFAULT_POKE];
     const s = Math.min(1.4, Math.max(0.4, strength));
     this._playFromPool(pool, 0.35 * s, 0.85 + Math.random() * 0.15);
@@ -225,20 +263,20 @@ export class Sfx {
 
   /** One-shot when the weather phase enters a gust. */
   playGust() {
-    if (!this._started || this._volume <= 0.001) return;
+    if (!this._started || this._suspended || this._volume <= 0.001) return;
     this._playFromPool(this._gustPool, 0.85, 0.92 + Math.random() * 0.12);
   }
 
   /** Pleasant score ping when the local boat clears a ring. */
   playRingScore() {
-    if (!this._started || this._volume <= 0.001) return;
+    if (!this._started || this._suspended || this._volume <= 0.001) return;
     const pool = this._ringPools[this._ringId] || this._ringPools[DEFAULT_RING];
     this._playFromPool(pool, 0.75, 0.97 + Math.random() * 0.06);
   }
 
   /** Soft short quack when a boat brushes a duck. */
   playQuack() {
-    if (!this._started || this._volume <= 0.001) return;
+    if (!this._started || this._suspended || this._volume <= 0.001) return;
     this._playFromPool(this._quackPool, 0.95, 0.92 + Math.random() * 0.16);
   }
 
@@ -258,6 +296,7 @@ export class Sfx {
   }
 
   _playFromPool(pool, volumeScale, rate) {
+    if (this._suspended) return;
     const a = pool.find((x) => x.paused || x.ended) || pool[0];
     try {
       a.pause();

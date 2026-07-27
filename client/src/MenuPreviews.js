@@ -61,12 +61,47 @@ async function loadPreviewModel(slot, id) {
   return object;
 }
 
+const BOAT_PREVIEW_PNG = {
+  standard: '/ui/previews/boat-standard.png',
+  cutter: '/ui/previews/boat-cutter.png',
+  pirate: '/ui/previews/boat-pirate.png',
+  yacht: '/ui/previews/boat-yacht.png',
+};
+
+function mountStaticBoatPreviews() {
+  const cards = document.querySelectorAll('#boat-options .option-card');
+  cards.forEach((card) => {
+    const preview = card.querySelector('.option-preview');
+    const id = card.dataset.boat;
+    const src = BOAT_PREVIEW_PNG[id];
+    if (!preview || !src) return;
+    preview.classList.add('option-preview-static');
+    preview.replaceChildren();
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = card.querySelector('span')?.textContent?.trim() || 'Boat';
+    img.width = 256;
+    img.height = 256;
+    img.decoding = 'async';
+    preview.appendChild(img);
+  });
+
+  return {
+    pause() {},
+    resume() {},
+    stop() {},
+  };
+}
+
 /**
  * Mount slowly-rotating 3D boat previews into intro option cards. Sailor and
  * pushstick cards use baked PNGs (client/public/ui/previews) instead.
+ * On touch/mobile, boats also use baked PNGs (avoids extra WebGL contexts).
  * pause/resume avoids recreating WebGL contexts (which blanks the main game canvas).
  */
-export function startMenuPreviews() {
+export function startMenuPreviews({ useStaticBoats = false } = {}) {
+  if (useStaticBoats) return mountStaticBoatPreviews();
+
   const startScreen = document.getElementById('start-screen');
   const slots = [];
   let raf = 0;

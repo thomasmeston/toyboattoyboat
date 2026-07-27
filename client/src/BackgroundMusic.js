@@ -34,6 +34,7 @@ export class BackgroundMusic {
     this._volume = clamp01(typeof prefs.volume === 'number' ? prefs.volume : DEFAULT_VOLUME);
     this._muted = Boolean(prefs.muted);
     this._started = false;
+    this._suspended = false;
     this._file = null;
 
     this.audio = new Audio();
@@ -81,7 +82,7 @@ export class BackgroundMusic {
     this.audio.load();
     this._apply();
 
-    if (wasPlaying) {
+    if (wasPlaying && !this._suspended) {
       this.audio.currentTime = 0;
       const play = this.audio.play();
       if (play?.catch) play.catch(() => {});
@@ -92,6 +93,23 @@ export class BackgroundMusic {
   start() {
     this._started = true;
     this._apply();
+    if (this._suspended) return;
+    const play = this.audio.play();
+    if (play?.catch) play.catch(() => {});
+  }
+
+  /** Pause/resume for escape menu — does not change mute preference. */
+  setSuspended(suspended) {
+    this._suspended = Boolean(suspended);
+    if (this._suspended) {
+      try {
+        this.audio.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    if (!this._started) return;
     const play = this.audio.play();
     if (play?.catch) play.catch(() => {});
   }
